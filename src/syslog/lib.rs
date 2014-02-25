@@ -3,12 +3,15 @@
 #[license = "MIT"];
 
 extern crate extra = "extra";
+extern crate native = "native";
 
 use std::io;
 use std::str;
+use std::result::Result;
+use std::path::posix::Path;
 use std::libc::getpid;
 use extra::time;
-
+use native::io::pipe::UnixDatagram;
 
 pub type Priority = uint;
 
@@ -52,30 +55,51 @@ pub struct Writer {
   tag:      ~str,
   hostname: ~str,
   network:  ~str,
-  raddr:    ~str
+  raddr:    ~str,
+  client:   ~str,
+  server:   ~str,
+  s:        ~UnixDatagram
 }
 
-pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> ~Writer {
-  ~Writer {
-    severity: severity,
-    facility: facility,
-    tag:      tag,
-    hostname: ~"",
-    network:  ~"",
-    raddr:    address
-  }
+pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
+  let client = ~"./syslog_client";
+  UnixDatagram::bind(&client.to_c_str()) .map( |s| {
+    ~Writer {
+      severity: severity,
+      facility: facility,
+      tag:      tag.clone(),
+      hostname: ~"",
+      network:  ~"",
+      raddr:    address.clone(),
+      client:   client.clone(),
+      server:   ~"/var/run/syslog",
+      s:        ~s
+    }
+  })
 }
 
 impl Writer {
   pub fn format(&self, message: ~str) -> ~str {
     let pid = unsafe { getpid() };
     let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
-      self.encode_priority(), 1/*version*/, time::now_utc().rfc3339(), self.hostname, self.tag, pid, message);
+      self.encode_priority(), 1/*version*/, time::now_utc().rfc3339(),
+      self.hostname, self.tag, pid, message);
     println!("formatted: {}", f);
     return f;
   }
 
   fn encode_priority(&self) -> Priority {
     return self.facility as uint | self.severity as uint
+  }
+
+  pub fn send(&mut self, message: ~str) -> Result<(), io::IoError> {
+    let formatted = self.format(message).into_bytes();
+    self.s.sendto(formatted, &self.server.to_c_str())
+  }
+}
+
+impl Drop for Writer {
+  fn drop(&mut self) {
+    io::fs::unlink(&Path::new(self.client.clone()));
   }
 }
