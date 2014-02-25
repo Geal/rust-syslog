@@ -63,6 +63,17 @@ pub struct Writer {
 }
 
 pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
+  let mut path = ~"/dev/log";
+  if ! Path::new(path.clone()).stat().is_ok() {
+    path = ~"/var/run/syslog";
+    if ! Path::new(path.clone()).stat().is_ok() {
+      return Err(io::IoError {
+        kind: io::PathDoesntExist,
+        desc: "could not find /dev/log nor /var/run/syslog",
+        detail: None
+      });
+    }
+  }
   match tempfile() {
     None => {
       println!("could not generate a tempfile");
@@ -83,7 +94,7 @@ pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) ->
           network:  ~"",
           raddr:    address.clone(),
           client:   p.clone(),
-          server:   ~"/var/run/syslog",
+          server:   path.clone(),
           s:        ~s
         }
       })
