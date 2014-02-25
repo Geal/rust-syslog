@@ -10,7 +10,7 @@ use std::libc::getpid;
 use extra::time;
 
 
-pub type Priority = int;
+pub type Priority = uint;
 
 pub enum Severity {
   LOG_EMERG,
@@ -47,16 +47,18 @@ pub enum Facility {
 }
 
 pub struct Writer {
-  priority: Priority,
+  severity: Severity,
+  facility: Facility,
   tag:      ~str,
   hostname: ~str,
   network:  ~str,
   raddr:    ~str
 }
 
-pub fn init(address: ~str, priority: Priority, tag: ~str) -> ~Writer {
+pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> ~Writer {
   ~Writer {
-    priority: priority,
+    severity: severity,
+    facility: facility,
     tag:      tag,
     hostname: ~"",
     network:  ~"",
@@ -67,9 +69,13 @@ pub fn init(address: ~str, priority: Priority, tag: ~str) -> ~Writer {
 impl Writer {
   pub fn format(&self, message: ~str) -> ~str {
     let pid = unsafe { getpid() };
-    let f =  format!("<{:d}> {:d} {:s} {:s} {:s} {:d} {:s}",
-      self.priority, 1/*version*/, time::now_utc().rfc3339(), self.hostname, self.tag, pid, message);
+    let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
+      self.encode_priority(), 1/*version*/, time::now_utc().rfc3339(), self.hostname, self.tag, pid, message);
     println!("formatted: {}", f);
     return f;
+  }
+
+  fn encode_priority(&self) -> Priority {
+    return self.facility as uint | self.severity as uint
   }
 }
