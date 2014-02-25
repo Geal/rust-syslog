@@ -51,7 +51,6 @@ pub enum Facility {
 }
 
 pub struct Writer {
-  severity: Severity,
   facility: Facility,
   tag:      ~str,
   hostname: ~str,
@@ -62,7 +61,7 @@ pub struct Writer {
   s:        ~UnixDatagram
 }
 
-pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
+pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
   let mut path = ~"/dev/log";
   if ! Path::new(path.clone()).stat().is_ok() {
     path = ~"/var/run/syslog";
@@ -87,7 +86,6 @@ pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) ->
       println!("temp file: {}", p);
       UnixDatagram::bind(&p.to_c_str()) .map( |s| {
         ~Writer {
-          severity: severity,
           facility: facility,
           tag:      tag.clone(),
           hostname: ~"",
@@ -103,27 +101,27 @@ pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) ->
 }
 
 impl Writer {
-  pub fn format(&self, message: ~str) -> ~str {
+  pub fn format(&self, severity:Severity, message: ~str) -> ~str {
     /*let pid = unsafe { getpid() };
     let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
-      self.encode_priority(),
+      self.encode_priority(severity, self.facility),
       1,// version
       time::now_utc().rfc3339(),
       self.hostname, self.tag, pid, message);*/
     // simplified version
     let f =  format!("<{:u}> {:s} {:s}",
-      self.encode_priority(),
+      self.encode_priority(severity, self.facility),
       self.tag, message);
     println!("formatted: {}", f);
     return f;
   }
 
-  fn encode_priority(&self) -> Priority {
-    return self.facility as uint | self.severity as uint
+  fn encode_priority(&self, severity: Severity, facility: Facility) -> Priority {
+    return facility as uint | severity as uint
   }
 
-  pub fn send(&mut self, message: ~str) -> Result<(), io::IoError> {
-    let formatted = self.format(message).into_bytes();
+  pub fn send(&mut self, severity: Severity, message: ~str) -> Result<(), io::IoError> {
+    let formatted = self.format(severity, message).into_bytes();
     self.s.sendto(formatted, &self.server.to_c_str())
   }
 }
