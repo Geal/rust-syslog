@@ -6,7 +6,6 @@ extern crate extra = "extra";
 extern crate native = "native";
 
 use std::io;
-use std::str;
 use std::result::Result;
 use std::path::posix::Path;
 use std::rand;
@@ -114,7 +113,10 @@ impl Writer {
 
 impl Drop for Writer {
   fn drop(&mut self) {
-    io::fs::unlink(&Path::new(self.client.clone()));
+    let r = io::fs::unlink(&Path::new(self.client.clone()));
+    if r.is_err() {
+      println!("could not delete the client socket: {}", self.client);
+    }
   }
 }
 

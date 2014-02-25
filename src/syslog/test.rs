@@ -3,8 +3,6 @@ extern crate native;
 
 use syslog = lib;
 
-use std::io;
-
 mod lib;
 
 #[test]
@@ -15,7 +13,10 @@ fn message() {
     let mut w = r.unwrap();
     let m:~str = w.format(~"hello");
     println!("test: {}", m);
-    w.send(~"pouet");
+    let r = w.send(~"pouet");
+    if r.is_err() {
+      println!("error sending: {}", r.unwrap_err());
+    }
     assert_eq!(m, ~"hello");
   }
 }
