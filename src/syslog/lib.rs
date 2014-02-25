@@ -104,10 +104,16 @@ pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) ->
 
 impl Writer {
   pub fn format(&self, message: ~str) -> ~str {
-    let pid = unsafe { getpid() };
+    /*let pid = unsafe { getpid() };
     let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
-      self.encode_priority(), 1/*version*/, time::now_utc().rfc3339(),
-      self.hostname, self.tag, pid, message);
+      self.encode_priority(),
+      1,// version
+      time::now_utc().rfc3339(),
+      self.hostname, self.tag, pid, message);*/
+    // simplified version
+    let f =  format!("<{:u}> {:s} {:s}",
+      self.encode_priority(),
+      self.tag, message);
     println!("formatted: {}", f);
     return f;
   }
