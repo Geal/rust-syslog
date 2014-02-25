@@ -9,6 +9,8 @@ use std::io;
 use std::str;
 use std::result::Result;
 use std::path::posix::Path;
+use std::rand;
+use std::rand::Rng;
 use std::libc::getpid;
 use extra::time;
 use native::io::pipe::UnixDatagram;
@@ -62,20 +64,32 @@ pub struct Writer {
 }
 
 pub fn init(address: ~str, severity: Severity, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
-  let client = ~"./syslog_client";
-  UnixDatagram::bind(&client.to_c_str()) .map( |s| {
-    ~Writer {
-      severity: severity,
-      facility: facility,
-      tag:      tag.clone(),
-      hostname: ~"",
-      network:  ~"",
-      raddr:    address.clone(),
-      client:   client.clone(),
-      server:   ~"/var/run/syslog",
-      s:        ~s
+  match tempfile() {
+    None => {
+      println!("could not generate a tempfile");
+      Err(io::IoError {
+        kind: io::PathAlreadyExists,
+        desc: "could not generate a temporary file",
+        detail: None
+      })
+    },
+    Some(p) => {
+      println!("temp file: {}", p);
+      UnixDatagram::bind(&p.to_c_str()) .map( |s| {
+        ~Writer {
+          severity: severity,
+          facility: facility,
+          tag:      tag.clone(),
+          hostname: ~"",
+          network:  ~"",
+          raddr:    address.clone(),
+          client:   p.clone(),
+          server:   ~"/var/run/syslog",
+          s:        ~s
+        }
+      })
     }
-  })
+  }
 }
 
 impl Writer {
@@ -102,4 +116,16 @@ impl Drop for Writer {
   fn drop(&mut self) {
     io::fs::unlink(&Path::new(self.client.clone()));
   }
+}
+
+fn tempfile() -> Option<~str> {
+  let tmpdir = Path::new("/tmp");
+  let mut r = rand::rng();
+  for _ in range(0u, 1000) {
+    let p = tmpdir.join(r.gen_ascii_str(16));
+    if ! p.stat().is_ok() {
+      return p.as_str().map(|s| s.to_owned());
+    }
+  }
+  None
 }
