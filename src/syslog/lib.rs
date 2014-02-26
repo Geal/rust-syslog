@@ -123,6 +123,38 @@ impl Writer {
     let formatted = self.format(severity, message).into_bytes();
     self.s.sendto(formatted, &self.server.to_c_str())
   }
+
+  pub fn Emerg(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_EMERG, message)
+  }
+
+  pub fn Alert(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_ALERT, message)
+  }
+
+  pub fn Crit(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_CRIT, message)
+  }
+
+  pub fn Err(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_ERR, message)
+  }
+
+  pub fn Warning(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_WARNING, message)
+  }
+
+  pub fn Notice(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_NOTICE, message)
+  }
+
+  pub fn Info(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_INFO, message)
+  }
+
+  pub fn Debug(&mut self, message: ~str) -> Result<(), io::IoError> {
+    self.send(LOG_DEBUG, message)
+  }
 }
 
 impl Drop for Writer {
