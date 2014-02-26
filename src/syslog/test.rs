@@ -16,6 +16,6 @@ fn message() {
     if r.is_err() {
       println!("error sending: {}", r.unwrap_err());
     }
-    assert_eq!(m, ~"hello");
+    assert_eq!(m, ~"<9> test hello");
   }
 }
