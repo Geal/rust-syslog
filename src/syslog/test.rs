@@ -7,7 +7,6 @@ mod lib;
 
 #[test]
 fn message() {
-  println!("{}", ~"aaa");
   let r = syslog::init(~"add", syslog::LOG_USER, ~"test");
   if r.is_ok() {
     let mut w = r.unwrap();
