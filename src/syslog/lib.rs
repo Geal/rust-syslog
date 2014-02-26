@@ -11,7 +11,6 @@ use std::path::posix::Path;
 use std::rand;
 use std::rand::Rng;
 use std::libc::getpid;
-use extra::time;
 use native::io::pipe::UnixDatagram;
 
 pub type Priority = uint;
