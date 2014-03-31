@@ -10,7 +10,6 @@ use std::io;
 use std::result::Result;
 use std::path::posix::Path;
 use rand::Rng;
-use std::libc::getpid;
 use native::io::pipe::UnixDatagram;
 
 pub type Priority = uint;
