@@ -1,15 +1,15 @@
-#[crate_type = "lib"];
-#[desc = "Syslog client"];
-#[license = "MIT"];
+#![crate_type = "lib"]
+#![crate_id = "syslog"]
+#![desc = "Syslog client"]
+#![license = "MIT"]
 
-extern crate extra = "extra";
-extern crate native = "native";
+extern crate native;
+extern crate rand;
 
 use std::io;
 use std::result::Result;
 use std::path::posix::Path;
-use std::rand;
-use std::rand::Rng;
+use rand::Rng;
 use std::libc::getpid;
 use native::io::pipe::UnixDatagram;
 

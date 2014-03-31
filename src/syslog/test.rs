@@ -1,5 +1,5 @@
-extern crate extra;
 extern crate native;
+extern crate rand;
 
 use syslog = lib;
 
