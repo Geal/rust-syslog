@@ -12,8 +12,9 @@ use std::io;
 use std::result::Result;
 use std::path::posix::Path;
 use rand::Rng;
-use self::unixdatagram;
-//mod unixdatagram;
+
+use self::unixdatagram::UnixDatagram;
+mod unixdatagram;
 
 pub type Priority = uint;
 
