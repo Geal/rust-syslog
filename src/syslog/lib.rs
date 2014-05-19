@@ -1,16 +1,19 @@
 #![crate_type = "lib"]
 #![crate_id = "syslog"]
+#![crate_type = "lib"]
 #![desc = "Syslog client"]
 #![license = "MIT"]
 
 extern crate native;
 extern crate rand;
 
+
 use std::io;
 use std::result::Result;
 use std::path::posix::Path;
 use rand::Rng;
-use native::io::pipe::UnixDatagram;
+use self::unixdatagram;
+//mod unixdatagram;
 
 pub type Priority = uint;
 
