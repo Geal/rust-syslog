@@ -60,13 +60,13 @@ pub struct Writer {
   raddr:    ~str,
   client:   ~str,
   server:   ~str,
-  s:        ~UnixDatagram
+  s:        Box<UnixDatagram>
 }
 
-pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<~Writer, io::IoError> {
-  let mut path = ~"/dev/log";
+pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<Box<Writer>, io::IoError> {
+  let mut path = "/dev/log".to_owned();
   if ! Path::new(path.clone()).stat().is_ok() {
-    path = ~"/var/run/syslog";
+    path = "/var/run/syslog".to_owned();
     if ! Path::new(path.clone()).stat().is_ok() {
       return Err(io::IoError {
         kind: io::PathDoesntExist,
@@ -87,15 +87,15 @@ pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<~Writer, io:
     Some(p) => {
       println!("temp file: {}", p);
       UnixDatagram::bind(&p.to_c_str()) .map( |s| {
-        ~Writer {
+        box Writer {
           facility: facility,
           tag:      tag.clone(),
-          hostname: ~"",
-          network:  ~"",
+          hostname: "".to_owned(),
+          network:  "".to_owned(),
           raddr:    address.clone(),
           client:   p.clone(),
           server:   path.clone(),
-          s:        ~s
+          s:        box s
         }
       })
     }
