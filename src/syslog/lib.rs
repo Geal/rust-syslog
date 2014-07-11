@@ -5,13 +5,13 @@
 
 extern crate native;
 extern crate alloc;
+#[cfg(test)] extern crate test;
 
 use std::io;
 use std::result::Result;
 use std::path::posix::Path;
 use std::rand::{task_rng, Rng};
 
-use self::unixdatagram::UnixDatagram;
 mod unixdatagram;
 
 pub type Priority = uint;
@@ -58,7 +58,7 @@ pub struct Writer {
   raddr:    String,
   client:   String,
   server:   String,
-  s:        Box<UnixDatagram>
+  s:        Box<unixdatagram::UnixDatagram>
 }
 
 pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::IoError> {
@@ -84,7 +84,7 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
     },
     Some(p) => {
       println!("temp file: {}", p);
-      UnixDatagram::bind(&p.to_c_str()) .map( |s| {
+      unixdatagram::UnixDatagram::bind(&p.to_c_str()) .map( |s| {
         box Writer {
           facility: facility,
           tag:      tag.clone(),
@@ -179,3 +179,4 @@ fn tempfile() -> Option<String> {
   }
   None
 }
+
