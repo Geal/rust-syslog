@@ -1,13 +1,14 @@
 extern crate libc;
 extern crate native;
+extern crate alloc;
 
 use std::intrinsics;
 use std::mem;
 use std::c_str::CString;
-use std::sync::arc::UnsafeArc;
+use alloc::arc::Arc;
 use std::os;
 use std::io;
-use std::unstable::mutex;
+use std::rt::mutex;
 use std::io::{IoResult, IoError};
 use native::io::file::fd_t;
 //use native::io::{retry, last_error};
@@ -15,13 +16,12 @@ use native::io::file::fd_t;
 //use native::io::util;
 
 struct Inner {
-    fd: fd_t,
-    lock: mutex::NativeMutex,
+    fd: fd_t
 }
 
 impl Inner {
     fn new(fd: fd_t) -> Inner {
-        Inner { fd: fd, lock: unsafe { mutex::NativeMutex::new() } }
+        Inner { fd: fd }
     }
 }
 
@@ -93,7 +93,7 @@ fn unix_socket(ty: libc::c_int) -> IoResult<fd_t> {
 
 fn connect(addr: &CString, ty: libc::c_int) -> IoResult<Inner> {
     let (addr, len) = try!(addr_to_sockaddr_un(addr));
-    let inner = Inner { fd: try!(unix_socket(ty)), lock: unsafe { mutex::NativeMutex::new() }};
+    let inner = Inner { fd: try!(unix_socket(ty))};
     let addrp = &addr as *libc::sockaddr_storage;
     match retry(|| unsafe {
         libc::connect(inner.fd, addrp as *libc::sockaddr,
@@ -121,22 +121,22 @@ fn bind(addr: &CString, ty: libc::c_int) -> IoResult<Inner> {
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct UnixDatagram {
-    inner: UnsafeArc<Inner>,
+    inner: Arc<Inner>,
 }
 
 impl UnixDatagram {
     pub fn connect(addr: &CString) -> IoResult<UnixDatagram> {
         connect(addr, libc::SOCK_DGRAM).map(|inner| {
-            UnixDatagram { inner: UnsafeArc::new(inner) }
+            UnixDatagram { inner: Arc::new(inner) }
         })
     }
     pub fn bind(addr: &CString) -> IoResult<UnixDatagram> {
         bind(addr, libc::SOCK_DGRAM).map(|inner| {
-            UnixDatagram { inner: UnsafeArc::new(inner) }
+            UnixDatagram { inner: Arc::new(inner) }
         })
     }
 
-    fn fd(&self) -> fd_t { unsafe { (*self.inner.get()).fd } }
+    fn fd(&self) -> fd_t { (*self.inner).fd }
 
     pub fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(uint, CString)> {
         let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };

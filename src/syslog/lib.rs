@@ -1,17 +1,15 @@
 #![crate_type = "lib"]
 #![crate_id = "syslog"]
-#![crate_type = "lib"]
 #![desc = "Syslog client"]
 #![license = "MIT"]
 
 extern crate native;
-extern crate rand;
-
+extern crate alloc;
 
 use std::io;
 use std::result::Result;
 use std::path::posix::Path;
-use rand::Rng;
+use std::rand::{task_rng, Rng};
 
 use self::unixdatagram::UnixDatagram;
 mod unixdatagram;
@@ -54,19 +52,19 @@ pub enum Facility {
 
 pub struct Writer {
   facility: Facility,
-  tag:      ~str,
-  hostname: ~str,
-  network:  ~str,
-  raddr:    ~str,
-  client:   ~str,
-  server:   ~str,
+  tag:      String,
+  hostname: String,
+  network:  String,
+  raddr:    String,
+  client:   String,
+  server:   String,
   s:        Box<UnixDatagram>
 }
 
-pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<Box<Writer>, io::IoError> {
-  let mut path = "/dev/log".to_owned();
+pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::IoError> {
+  let mut path = "/dev/log".to_string();
   if ! Path::new(path.clone()).stat().is_ok() {
-    path = "/var/run/syslog".to_owned();
+    path = "/var/run/syslog".to_string();
     if ! Path::new(path.clone()).stat().is_ok() {
       return Err(io::IoError {
         kind: io::PathDoesntExist,
@@ -90,8 +88,8 @@ pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<Box<Writer>,
         box Writer {
           facility: facility,
           tag:      tag.clone(),
-          hostname: "".to_owned(),
-          network:  "".to_owned(),
+          hostname: "".to_string(),
+          network:  "".to_string(),
           raddr:    address.clone(),
           client:   p.clone(),
           server:   path.clone(),
@@ -103,7 +101,7 @@ pub fn init(address: ~str, facility: Facility, tag: ~str) -> Result<Box<Writer>,
 }
 
 impl Writer {
-  pub fn format(&self, severity:Severity, message: ~str) -> ~str {
+  pub fn format(&self, severity:Severity, message: String) -> String {
     /*let pid = unsafe { getpid() };
     let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
       self.encode_priority(severity, self.facility),
@@ -122,40 +120,40 @@ impl Writer {
     return facility as uint | severity as uint
   }
 
-  pub fn send(&mut self, severity: Severity, message: ~str) -> Result<(), io::IoError> {
+  pub fn send(&mut self, severity: Severity, message: String) -> Result<(), io::IoError> {
     let formatted = self.format(severity, message).into_bytes();
-    self.s.sendto(formatted, &self.server.to_c_str())
+    self.s.sendto(formatted.as_slice(), &self.server.to_c_str())
   }
 
-  pub fn Emerg(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Emerg(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_EMERG, message)
   }
 
-  pub fn Alert(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Alert(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_ALERT, message)
   }
 
-  pub fn Crit(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Crit(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_CRIT, message)
   }
 
-  pub fn Err(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Err(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_ERR, message)
   }
 
-  pub fn Warning(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Warning(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_WARNING, message)
   }
 
-  pub fn Notice(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Notice(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_NOTICE, message)
   }
 
-  pub fn Info(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Info(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_INFO, message)
   }
 
-  pub fn Debug(&mut self, message: ~str) -> Result<(), io::IoError> {
+  pub fn Debug(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(LOG_DEBUG, message)
   }
 }
@@ -169,13 +167,14 @@ impl Drop for Writer {
   }
 }
 
-fn tempfile() -> Option<~str> {
+fn tempfile() -> Option<String> {
   let tmpdir = Path::new("/tmp");
-  let mut r = rand::rng();
+  let mut r = task_rng();
   for _ in range(0u, 1000) {
-    let p = tmpdir.join(r.gen_ascii_str(16));
+    let filename: String = r.gen_ascii_chars().take(16).collect();
+    let p = tmpdir.join(filename);
     if ! p.stat().is_ok() {
-      return p.as_str().map(|s| s.to_owned());
+      return p.as_str().map(|s| s.to_string());
     }
   }
   None
