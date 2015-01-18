@@ -1,7 +1,4 @@
 #![crate_type = "lib"]
-#![crate_id = "syslog"]
-#![desc = "Syslog client"]
-#![license = "MIT"]
 
 extern crate alloc;
 #[cfg(test)] extern crate test;
