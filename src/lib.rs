@@ -3,14 +3,15 @@
 #![desc = "Syslog client"]
 #![license = "MIT"]
 
-extern crate native;
 extern crate alloc;
 #[cfg(test)] extern crate test;
 
 use std::io;
 use std::result::Result;
-use std::path::posix::Path;
-use std::rand::{task_rng, Rng};
+use std::ffi::CString;
+use std::io::fs::PathExtensions;
+//use std::path::posix::Path;
+use std::rand::{thread_rng, Rng};
 
 mod unixdatagram;
 
@@ -27,6 +28,7 @@ pub enum Severity {
   LOG_DEBUG
 }
 
+#[derive(Clone)]
 pub enum Facility {
   LOG_KERN     = 0  << 3,
   LOG_USER     = 1  << 3,
@@ -84,17 +86,17 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
     },
     Some(p) => {
       println!("temp file: {}", p);
-      unixdatagram::UnixDatagram::bind(&p.to_c_str()) .map( |s| {
-        box Writer {
-          facility: facility,
+      unixdatagram::UnixDatagram::bind(&CString::from_slice(p.as_bytes())) .map( |s| {
+        Box::new(Writer {
+          facility: facility.clone(),
           tag:      tag.clone(),
           hostname: "".to_string(),
           network:  "".to_string(),
           raddr:    address.clone(),
           client:   p.clone(),
           server:   path.clone(),
-          s:        box s
-        }
+          s:        Box::new(s)
+        })
       })
     }
   }
@@ -109,8 +111,8 @@ impl Writer {
       time::now_utc().rfc3339(),
       self.hostname, self.tag, pid, message);*/
     // simplified version
-    let f =  format!("<{:u}> {:s} {:s}",
-      self.encode_priority(severity, self.facility),
+    let f =  format!("<{:?}> {:?} {:?}",
+      self.encode_priority(severity, self.facility.clone()),
       self.tag, message);
     println!("formatted: {}", f);
     return f;
@@ -122,39 +124,39 @@ impl Writer {
 
   pub fn send(&mut self, severity: Severity, message: String) -> Result<(), io::IoError> {
     let formatted = self.format(severity, message).into_bytes();
-    self.s.sendto(formatted.as_slice(), &self.server.to_c_str())
+    self.s.sendto(formatted.as_slice(), &CString::from_slice(self.server.as_bytes()))
   }
 
   pub fn Emerg(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_EMERG, message)
+    self.send(Severity::LOG_EMERG, message)
   }
 
   pub fn Alert(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_ALERT, message)
+    self.send(Severity::LOG_ALERT, message)
   }
 
   pub fn Crit(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_CRIT, message)
+    self.send(Severity::LOG_CRIT, message)
   }
 
   pub fn Err(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_ERR, message)
+    self.send(Severity::LOG_ERR, message)
   }
 
   pub fn Warning(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_WARNING, message)
+    self.send(Severity::LOG_WARNING, message)
   }
 
   pub fn Notice(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_NOTICE, message)
+    self.send(Severity::LOG_NOTICE, message)
   }
 
   pub fn Info(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_INFO, message)
+    self.send(Severity::LOG_INFO, message)
   }
 
   pub fn Debug(&mut self, message: String) -> Result<(), io::IoError> {
-    self.send(LOG_DEBUG, message)
+    self.send(Severity::LOG_DEBUG, message)
   }
 }
 
@@ -169,7 +171,7 @@ impl Drop for Writer {
 
 fn tempfile() -> Option<String> {
   let tmpdir = Path::new("/tmp");
-  let mut r = task_rng();
+  let mut r = thread_rng();
   for _ in range(0u, 1000) {
     let filename: String = r.gen_ascii_chars().take(16).collect();
     let p = tmpdir.join(filename);

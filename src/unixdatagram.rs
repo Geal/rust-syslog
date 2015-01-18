@@ -1,26 +1,24 @@
 extern crate libc;
-extern crate native;
 extern crate alloc;
 
 use std::intrinsics;
 use std::mem;
-use std::c_str::CString;
+use std::ffi::CString;
 use alloc::arc::Arc;
 use std::os;
 use std::io;
-use std::rt::mutex;
+use std::sync::Mutex;
 use std::io::{IoResult, IoError};
-use native::io::file::fd_t;
-//use native::io::{retry, last_error};
-//use native::io::pipe::{addr_to_sockaddr_un};
-//use native::io::util;
+use std::os::unix::Fd;
+use std::slice::SliceExt;
+use std::iter::IteratorExt;
 
 struct Inner {
-    fd: fd_t
+    fd: Fd
 }
 
 impl Inner {
-    fn new(fd: fd_t) -> Inner {
+    fn new(fd: Fd) -> Inner {
         Inner { fd: fd }
     }
 }
@@ -38,33 +36,35 @@ fn sockaddr_to_unix(storage: &libc::sockaddr_storage,
         mem::transmute(storage)
       };
       unsafe {
-        Ok(CString::new(storage.sun_path.as_ptr(), false).clone())
+        //FIXME: the array size depends on the platform
+        let tmp:&[u8; 104] = mem::transmute(&storage.sun_path);
+        Ok(CString::from_slice(tmp))
       }
     }
-    _ => Err(io::standard_error(io::InvalidInput))
-  }
+  _ => Err(io::standard_error(io::InvalidInput))
+}
 }
 
 #[inline]
-fn retry(f: || -> libc::c_int) -> libc::c_int {
-    loop {
-        match f() {
-            -1 if os::errno() as int == libc::EINTR as int => {}
-            n => return n,
-        }
-    }
+fn retry<F>(mut f: F) -> libc::c_int where F: FnMut() -> libc::c_int {
+  loop {
+      match f() {
+          -1 if os::errno() as int == libc::EINTR as int => {}
+          n => return n,
+      }
+  }
 }
 
 fn last_error() -> IoError {
-    IoError::last_error()
+  IoError::last_error()
 }
 
 fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint)> {
-    // the sun_path length is limited to SUN_LEN (with null)
-    assert!(mem::size_of::<libc::sockaddr_storage>() >=
-            mem::size_of::<libc::sockaddr_un>());
-    let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
-    let s: &mut libc::sockaddr_un = unsafe { mem::transmute(&mut storage) };
+  // the sun_path length is limited to SUN_LEN (with null)
+  assert!(mem::size_of::<libc::sockaddr_storage>() >=
+          mem::size_of::<libc::sockaddr_un>());
+  let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
+  let s: &mut libc::sockaddr_un = unsafe { mem::transmute(&mut storage) };
 
     let len = addr.len();
     if len > s.sun_path.len() - 1 {
@@ -75,8 +75,8 @@ fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint
         })
     }
     s.sun_family = libc::AF_UNIX as libc::sa_family_t;
-    for (slot, value) in s.sun_path.mut_iter().zip(addr.iter()) {
-        *slot = value;
+    for (slot, value) in s.sun_path.iter_mut().zip(addr.iter()) {
+        *slot = *value;
     }
 
     // count the null terminator
@@ -84,7 +84,7 @@ fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint
     return Ok((storage, len));
 }
 
-fn unix_socket(ty: libc::c_int) -> IoResult<fd_t> {
+fn unix_socket(ty: libc::c_int) -> IoResult<Fd> {
     match unsafe { libc::socket(libc::AF_UNIX, ty, 0) } {
         -1 => Err(last_error()),
         fd => Ok(fd)
@@ -136,7 +136,7 @@ impl UnixDatagram {
         })
     }
 
-    fn fd(&self) -> fd_t { (*self.inner).fd }
+    fn fd(&self) -> Fd { (*self.inner).fd }
 
     pub fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(uint, CString)> {
         let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
