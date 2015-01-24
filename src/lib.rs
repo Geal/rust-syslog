@@ -12,7 +12,7 @@ use std::rand::{thread_rng, Rng};
 
 mod unixdatagram;
 
-pub type Priority = uint;
+pub type Priority = u8;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy,Clone)]
@@ -119,7 +119,7 @@ impl Writer {
   }
 
   fn encode_priority(&self, severity: Severity, facility: Facility) -> Priority {
-    return facility as uint | severity as uint
+    return facility as u8 | severity as u8
   }
 
   pub fn send(&mut self, severity: Severity, message: String) -> Result<(), io::IoError> {
@@ -172,7 +172,7 @@ impl Drop for Writer {
 fn tempfile() -> Option<String> {
   let tmpdir = Path::new("/tmp");
   let mut r = thread_rng();
-  for _ in range(0u, 1000) {
+  for _ in range(0, 1000) {
     let filename: String = r.gen_ascii_chars().take(16).collect();
     let p = tmpdir.join(filename);
     if ! p.stat().is_ok() {

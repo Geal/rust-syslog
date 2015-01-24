@@ -28,10 +28,10 @@ impl Drop for Inner {
 }
 
 fn sockaddr_to_unix(storage: &libc::sockaddr_storage,
-                  len: uint) -> IoResult<CString> {
+                  len: usize) -> IoResult<CString> {
   match storage.ss_family as libc::c_int {
     libc::AF_UNIX => {
-      assert!(len as uint <= mem::size_of::<libc::sockaddr_un>());
+      assert!(len as usize <= mem::size_of::<libc::sockaddr_un>());
       let storage: &libc::sockaddr_un = unsafe {
         mem::transmute(storage)
       };
@@ -49,7 +49,7 @@ fn sockaddr_to_unix(storage: &libc::sockaddr_storage,
 fn retry<F>(mut f: F) -> libc::c_int where F: FnMut() -> libc::c_int {
   loop {
       match f() {
-          -1 if os::errno() as int == libc::EINTR as int => {}
+          -1 if os::errno() as isize == libc::EINTR as isize => {}
           n => return n,
       }
   }
@@ -59,7 +59,7 @@ fn last_error() -> IoError {
   IoError::last_error()
 }
 
-fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, uint)> {
+fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, usize)> {
   // the sun_path length is limited to SUN_LEN (with null)
   assert!(mem::size_of::<libc::sockaddr_storage>() >=
           mem::size_of::<libc::sockaddr_un>());
@@ -138,7 +138,7 @@ impl UnixDatagram {
 
     fn fd(&self) -> Fd { (*self.inner).fd }
 
-    pub fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(uint, CString)> {
+    pub fn recvfrom(&mut self, buf: &mut [u8]) -> IoResult<(usize, CString)> {
         let mut storage: libc::sockaddr_storage = unsafe { intrinsics::init() };
         let storagep = &mut storage as *mut libc::sockaddr_storage;
         let mut addrlen: libc::socklen_t =
@@ -154,8 +154,8 @@ impl UnixDatagram {
         });
 
         if ret < 0 { return Err(last_error()) }
-        sockaddr_to_unix(&storage, addrlen as uint).and_then(|addr| {
-            Ok((ret as uint, addr))
+        sockaddr_to_unix(&storage, addrlen as usize).and_then(|addr| {
+            Ok((ret as usize, addr))
         })
     }
 
@@ -173,7 +173,7 @@ impl UnixDatagram {
 
         match ret {
             -1 => Err(last_error()),
-            n if n as uint != buf.len() => {
+            n if n as usize != buf.len() => {
 
                 Err(io::IoError {
                     kind: io::OtherIoError,
