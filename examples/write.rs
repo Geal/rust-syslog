@@ -8,7 +8,7 @@ fn main() {
     Ok(mut writer) => {
       let r = writer.send(Severity::LOG_ALERT, String::from_str("hello world"));
       if r.is_err() {
-        println!("error sending the log {}", r.unwrap_err().desc);
+        println!("error sending the log {}", r.err().expect("got error"));
       }
     }
   }
