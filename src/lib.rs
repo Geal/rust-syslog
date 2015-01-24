@@ -14,6 +14,8 @@ mod unixdatagram;
 
 pub type Priority = uint;
 
+#[allow(non_camel_case_types)]
+#[derive(Copy,Clone)]
 pub enum Severity {
   LOG_EMERG,
   LOG_ALERT,
@@ -25,7 +27,8 @@ pub enum Severity {
   LOG_DEBUG
 }
 
-#[derive(Clone)]
+#[allow(non_camel_case_types)]
+#[derive(Copy,Clone)]
 pub enum Facility {
   LOG_KERN     = 0  << 3,
   LOG_USER     = 1  << 3,
@@ -124,35 +127,35 @@ impl Writer {
     self.s.sendto(formatted.as_slice(), &CString::from_slice(self.server.as_bytes()))
   }
 
-  pub fn Emerg(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn emerg(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_EMERG, message)
   }
 
-  pub fn Alert(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn alert(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_ALERT, message)
   }
 
-  pub fn Crit(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn crit(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_CRIT, message)
   }
 
-  pub fn Err(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn err(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_ERR, message)
   }
 
-  pub fn Warning(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn warning(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_WARNING, message)
   }
 
-  pub fn Notice(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn notice(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_NOTICE, message)
   }
 
-  pub fn Info(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn info(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_INFO, message)
   }
 
-  pub fn Debug(&mut self, message: String) -> Result<(), io::IoError> {
+  pub fn debug(&mut self, message: String) -> Result<(), io::IoError> {
     self.send(Severity::LOG_DEBUG, message)
   }
 }
