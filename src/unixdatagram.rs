@@ -6,9 +6,9 @@ use std::mem;
 use std::ffi::CString;
 use alloc::arc::Arc;
 use std::os;
-use std::io;
+use std::old_io;
 use std::sync::Mutex;
-use std::io::{IoResult, IoError};
+use std::old_io::{IoResult, IoError};
 use std::os::unix::Fd;
 use std::slice::SliceExt;
 use std::iter::IteratorExt;
@@ -41,7 +41,7 @@ fn sockaddr_to_unix(storage: &libc::sockaddr_storage,
         Ok(CString::from_slice(tmp))
       }
     }
-  _ => Err(io::standard_error(io::InvalidInput))
+  _ => Err(old_io::standard_error(old_io::InvalidInput))
 }
 }
 
@@ -68,8 +68,8 @@ fn addr_to_sockaddr_un(addr: &CString) -> IoResult<(libc::sockaddr_storage, usiz
 
     let len = addr.len();
     if len > s.sun_path.len() - 1 {
-        return Err(io::IoError {
-            kind: io::InvalidInput,
+        return Err(old_io::IoError {
+            kind: old_io::InvalidInput,
             desc: "path must be smaller than SUN_LEN",
             detail: None,
         })
@@ -175,8 +175,8 @@ impl UnixDatagram {
             -1 => Err(last_error()),
             n if n as usize != buf.len() => {
 
-                Err(io::IoError {
-                    kind: io::OtherIoError,
+                Err(old_io::IoError {
+                    kind: old_io::OtherIoError,
                     desc: "couldn't send entire packet at once",
                     detail: None,
                 })
