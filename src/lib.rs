@@ -85,7 +85,7 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
       })
     },
     Some(p) => {
-      println!("temp file: {}", p);
+      //println!("temp file: {}", p);
       unixdatagram::UnixDatagram::bind(&CString::from_slice(p.as_bytes())) .map( |s| {
         Box::new(Writer {
           facility: facility.clone(),
