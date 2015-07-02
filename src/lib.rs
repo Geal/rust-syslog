@@ -2,11 +2,14 @@
 
 extern crate unix_socket;
 extern crate rand;
+extern crate libc;
+extern crate time;
 
 use std::result::Result;
 use std::io;
 use std::path::Path;
 use rand::{thread_rng, Rng};
+use libc::funcs::posix88::unistd::getpid;
 
 use unix_socket::UnixDatagram;
 
@@ -85,8 +88,6 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
       )
     },
     Some(p) => {
-      //println!("temp file: {}", p);
-      //unixdatagram::UnixDatagram::bind(&CString::from_slice(p.as_bytes())) .map( |s| {
       UnixDatagram::bind(&p) .map( |s| {
         Box::new(Writer {
           facility: facility.clone(),
@@ -104,18 +105,20 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
 }
 
 impl Writer {
-  pub fn format(&self, severity:Severity, message: String) -> String {
-    /*let pid = unsafe { getpid() };
-    let f =  format!("<{:u}> {:d} {:s} {:s} {:s} {:d} {:s}",
+  pub fn format_extended(&self, severity:Severity, message: String) -> String {
+    let pid = unsafe { getpid() };
+    let f =  format!("<{}> {} {} {} {} {} {}",
       self.encode_priority(severity, self.facility),
       1,// version
       time::now_utc().rfc3339(),
-      self.hostname, self.tag, pid, message);*/
-    // simplified version
+      self.hostname, self.tag, pid, message);
+    return f;
+  }
+
+  pub fn format(&self, severity:Severity, message: String) -> String {
     let f =  format!("<{:?}> {:?} {:?}",
       self.encode_priority(severity, self.facility.clone()),
       self.tag, message);
-    println!("formatted: {}", f);
     return f;
   }
 
