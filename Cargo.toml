@@ -12,3 +12,6 @@ unix_socket = "~0.4.3"
 rand        = "~0.3.8"
 libc        = "~0.1"
 time        = "~0.1"
+
+[features]
+nightly = []
