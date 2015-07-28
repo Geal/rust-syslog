@@ -39,6 +39,8 @@ use std::path::Path;
 use std::env;
 use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
+use std::sync::{Arc, Mutex};
+
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
 
@@ -91,7 +93,7 @@ enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(Box<UnixDatagram>,String,String),
   Udp(Box<UdpSocket>, SocketAddr),
-  Tcp(Box<TcpStream>)
+  Tcp(Arc<Mutex<TcpStream>>)
 }
 
 /// Main logging structure
@@ -174,7 +176,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
         hostname: hostname,
         process:  process_name,
         pid:      pid,
-        s:        LoggerBackend::Tcp(Box::new(socket))
+        s:        LoggerBackend::Tcp(Arc::new(Mutex::new(socket)))
       })
   })
 }
@@ -223,7 +225,7 @@ impl Logger {
   }
 
   /// Sends a basic log message of the format `<priority> message`
-  pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
+  pub fn send(&self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted =  format!("<{:?}> {:?}",
       self.encode_priority(severity, self.facility.clone()),
       message).into_bytes();
@@ -231,55 +233,58 @@ impl Logger {
   }
 
   /// Sends a RFC 3164 log message
-  pub fn send_3164(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
+  pub fn send_3164(&self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted = self.format_3164(severity, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a RFC 5424 log message
-  pub fn send_5424(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: String) -> Result<usize, io::Error> {
+  pub fn send_5424(&self, severity: Severity, message_id: i32, data: StructuredData, message: String) -> Result<usize, io::Error> {
     let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a message directly, without any formatting
-  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize, io::Error> {
+  pub fn send_raw(&self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
       LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&message[..], Path::new(&path)),
       LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
-      LoggerBackend::Tcp(ref mut socket)          => socket.write(&message[..])
+      LoggerBackend::Tcp(ref socket_wrap)         => {
+        let mut socket = socket_wrap.lock().unwrap();
+        socket.write(&message[..])
+      }
     }
   }
 
-  pub fn emerg(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn emerg(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_EMERG, message)
   }
 
-  pub fn alert(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn alert(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ALERT, message)
   }
 
-  pub fn crit(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn crit(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_CRIT, message)
   }
 
-  pub fn err(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn err(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ERR, message)
   }
 
-  pub fn warning(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn warning(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_WARNING, message)
   }
 
-  pub fn notice(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn notice(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_NOTICE, message)
   }
 
-  pub fn info(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn info(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_INFO, message)
   }
 
-  pub fn debug(&mut self, message: String) -> Result<usize, io::Error> {
+  pub fn debug(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_DEBUG, message)
   }
 }
@@ -317,3 +322,41 @@ fn get_process_info() -> Option<(String,i32)> {
     (name, pid)
   })
 }
+
+#[test]
+fn message() {
+  use std::thread;
+  use std::sync::mpsc::channel;
+
+  let r = unix(Facility::LOG_USER);
+  //let r = tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER);
+  if r.is_ok() {
+    let mut w = r.unwrap();
+    let m:String = w.format_3164(Severity::LOG_ALERT, "hello".to_string());
+    println!("test: {}", m);
+    let r = w.send_3164(Severity::LOG_ALERT, "pouet".to_string());
+    if r.is_err() {
+      println!("error sending: {}", r.unwrap_err());
+    }
+    //assert_eq!(m, "<9> test hello".to_string());
+
+    let data = Arc::new(w);
+    let (tx, rx) = channel();
+    for i in 0..3 {
+      let shared = data.clone();
+      let tx = tx.clone();
+      thread::spawn(move || {
+        //let mut logger = *shared;
+        let message = format!("sent from {}", i);
+        shared.send_3164(Severity::LOG_DEBUG, message.to_string());
+        println!("sent message from {}", i);
+        tx.send(());
+      });
+    }
+
+    for _ in 0..3 {
+      rx.recv();
+    }
+  }
+}
+
