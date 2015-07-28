@@ -5,4 +5,35 @@
 
 A small library to write to local syslog.
 
-TODO: remote syslog
+## Installation
+
+syslog is available on [crates.io](https://crates.io/crates/syslog) and can be included in your Cargo enabled project like this:
+
+```toml
+[dependencies]
+nom = "~1.1.0"
+```
+
+## documentation
+
+Reference documentation is available [here](http://rust.unhandledexpression.com/nom/).
+
+## Example
+
+```rust
+extern crate syslog;
+
+use syslog::{Facility,Severity};
+
+fn main() {
+  match syslog::unix(Facility::LOG_USER, String::from("example")) {
+    Err(e)         => println!("impossible to connect to syslog: {:?}", e),
+    Ok(mut writer) => {
+      let r = writer.send(Severity::LOG_ALERT, String::from("hello world"));
+      if r.is_err() {
+        println!("error sending the log {}", r.err().expect("got error"));
+      }
+    }
+  }
+}
+```

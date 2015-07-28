@@ -1,3 +1,31 @@
+//! Syslog
+//!
+//! This crate provides facilities to send log messages via syslog.
+//! It supports Unix sockets for local syslog, UDP and TCP for remote servers.
+//!
+//! Messages can be passed directly without modification, or in RFC 3164 or RFC 5424 format
+//!
+//! The code is available on [Github](https://github.com/Geal/rust-syslog)
+//!
+//! # Example
+//!
+//! ```
+//! extern crate syslog;
+//!
+//! use syslog::{Facility,Severity};
+//!
+//! fn main() {
+//!   match syslog::unix(Facility::LOG_USER, String::from("example")) {
+//!     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
+//!     Ok(mut writer) => {
+//!       let r = writer.send(Severity::LOG_ALERT, String::from("hello world"));
+//!       if r.is_err() {
+//!         println!("error sending the log {}", r.err().expect("got error"));
+//!       }
+//!     }
+//!   }
+//! }
+//! ```
 #![crate_type = "lib"]
 
 extern crate unix_socket;
