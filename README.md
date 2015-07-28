@@ -16,7 +16,7 @@ syslog = "~1.1.0"
 
 ## documentation
 
-Reference documentation is available [here](http://rust.unhandledexpression.com/nom/).
+Reference documentation is available [here](http://rust.unhandledexpression.com/syslog/).
 
 ## Example
 
