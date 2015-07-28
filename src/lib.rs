@@ -45,6 +45,8 @@ use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
 
 pub type Priority = u8;
+
+/// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
 
 #[allow(non_camel_case_types)]
@@ -92,6 +94,7 @@ enum LoggerBackend {
   Tcp(Box<TcpStream>)
 }
 
+/// Main logging structure
 pub struct Logger {
   facility: Facility,
   tag:      String,
@@ -101,6 +104,7 @@ pub struct Logger {
   s:        LoggerBackend
 }
 
+/// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   let mut path = "/dev/log".to_string();
   if ! std::fs::metadata(Path::new(&path)).is_ok() {
@@ -140,6 +144,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   }
 }
 
+/// returns a UDP logger connecting `local` and `server`
 pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
@@ -163,6 +168,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
   })
 }
 
+/// returns a TCP logger connecting `local` and `server`
 pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   TcpStream::connect(server).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
@@ -178,6 +184,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, ta
 }
 
 impl Logger {
+  /// format a message as a RFC 3164 log message
   pub fn format_3164(&self, severity:Severity, message: String) -> String {
     let f =  format!("<{}>{} {} {}[{}]: {}",
       self.encode_priority(severity, self.facility),
@@ -186,6 +193,7 @@ impl Logger {
     return f;
   }
 
+  /// format RFC 5424 structured data as `([id (name="value")*])*`
   pub fn format_5424_structured_data(&self, data: StructuredData) -> String {
     if data.is_empty() {
       "-".to_string()
@@ -203,6 +211,7 @@ impl Logger {
     }
   }
 
+  /// format a message as a RFC 5424 log message
   pub fn format_5424(&self, severity:Severity, message_id: i32, data: StructuredData, message: String) -> String {
     let f =  format!("<{}> {} {} {} {} {} {} {} {}",
       self.encode_priority(severity, self.facility),
@@ -217,6 +226,7 @@ impl Logger {
     return facility as u8 | severity as u8
   }
 
+  /// Sends a basic log message of the format `<priority> message`
   pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted =  format!("<{:?}> {:?} {:?}",
       self.encode_priority(severity, self.facility.clone()),
@@ -224,16 +234,19 @@ impl Logger {
     self.send_raw(&formatted[..])
   }
 
+  /// Sends a RFC 3164 log message
   pub fn send_3164(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted = self.format_3164(severity, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
+  /// Sends a RFC 5424 log message
   pub fn send_5424(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: String) -> Result<usize, io::Error> {
     let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
+  /// Sends a message directly, without any formatting
   pub fn send_raw(&mut self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
       LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&message[..], Path::new(&path)),
