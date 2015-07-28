@@ -15,7 +15,7 @@
 //! use syslog::{Facility,Severity};
 //!
 //! fn main() {
-//!   match syslog::unix(Facility::LOG_USER, String::from("example")) {
+//!   match syslog::unix(Facility::LOG_USER) {
 //!     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
 //!     Ok(mut writer) => {
 //!       let r = writer.send(Severity::LOG_ALERT, String::from("hello world"));
@@ -97,7 +97,6 @@ enum LoggerBackend {
 /// Main logging structure
 pub struct Logger {
   facility: Facility,
-  tag:      String,
   hostname: String,
   process:  String,
   pid:      i32,
@@ -105,7 +104,7 @@ pub struct Logger {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
+pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
   let mut path = "/dev/log".to_string();
   if ! std::fs::metadata(Path::new(&path)).is_ok() {
     path = "/var/run/syslog".to_string();
@@ -133,7 +132,6 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
         let (process_name, pid) = get_process_info().unwrap();
         Box::new(Logger {
           facility: facility.clone(),
-          tag:      tag.clone(),
           hostname: "localhost".to_string(),
           process:  process_name,
           pid:      pid,
@@ -145,7 +143,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Box<Logger>, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
       io::Error::new(
@@ -158,7 +156,6 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        tag:      tag.clone(),
         hostname: hostname,
         process:  process_name,
         pid:      pid,
@@ -169,12 +166,11 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Box<Logger>, io::Error> {
   TcpStream::connect(server).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        tag:      tag.clone(),
         hostname: hostname,
         process:  process_name,
         pid:      pid,
@@ -228,9 +224,9 @@ impl Logger {
 
   /// Sends a basic log message of the format `<priority> message`
   pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
-    let formatted =  format!("<{:?}> {:?} {:?}",
+    let formatted =  format!("<{:?}> {:?}",
       self.encode_priority(severity, self.facility.clone()),
-      self.tag, message).into_bytes();
+      message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
