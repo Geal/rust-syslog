@@ -92,7 +92,7 @@ enum LoggerBackend {
   Tcp(Box<TcpStream>)
 }
 
-pub struct Writer {
+pub struct Logger {
   facility: Facility,
   tag:      String,
   hostname: String,
@@ -101,7 +101,7 @@ pub struct Writer {
   s:        LoggerBackend
 }
 
-pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn unix(facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   let mut path = "/dev/log".to_string();
   if ! std::fs::metadata(Path::new(&path)).is_ok() {
     path = "/var/run/syslog".to_string();
@@ -127,7 +127,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
     Some(p) => {
       UnixDatagram::bind(&p) .map( |s| {
         let (process_name, pid) = get_process_info().unwrap();
-        Box::new(Writer {
+        Box::new(Logger {
           facility: facility.clone(),
           tag:      tag.clone(),
           hostname: "localhost".to_string(),
@@ -140,7 +140,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   }
 }
 
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
       io::Error::new(
@@ -151,7 +151,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
   }).and_then(|server_addr| {
     UdpSocket::bind(local).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
-      Box::new(Writer {
+      Box::new(Logger {
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: hostname,
@@ -163,10 +163,10 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
   })
 }
 
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Logger>, io::Error> {
   TcpStream::connect(server).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
-      Box::new(Writer {
+      Box::new(Logger {
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: hostname,
@@ -177,7 +177,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, ta
   })
 }
 
-impl Writer {
+impl Logger {
   pub fn format_3164(&self, severity:Severity, message: String) -> String {
     let f =  format!("<{}>{} {} {}[{}]: {}",
       self.encode_priority(severity, self.facility),
@@ -275,7 +275,7 @@ impl Writer {
   }
 }
 
-impl Drop for Writer {
+impl Drop for Logger {
   fn drop(&mut self) {
     if let LoggerBackend::Unix(_, ref client, _) = self.s {
       let r = std::fs::remove_file(&Path::new(&client.clone()));
