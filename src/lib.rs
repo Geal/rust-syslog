@@ -85,7 +85,7 @@ pub enum Facility {
   LOG_LOCAL7   = 23 << 3
 }
 
-pub enum LoggerBackend {
+enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(Box<UnixDatagram>,String,String),
   Udp(Box<UdpSocket>, SocketAddr),
