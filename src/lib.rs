@@ -8,6 +8,7 @@ extern crate time;
 use std::result::Result;
 use std::io::{self, Write};
 use std::path::Path;
+use std::env;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
@@ -65,6 +66,8 @@ pub struct Writer {
   facility: Facility,
   tag:      String,
   hostname: String,
+  process:  String,
+  pid:      i32,
   s:        LoggerBackend
 }
 
@@ -93,10 +96,13 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
     },
     Some(p) => {
       UnixDatagram::bind(&p) .map( |s| {
+        let (process_name, pid) = get_process_info().unwrap();
         Box::new(Writer {
           facility: facility.clone(),
           tag:      tag.clone(),
           hostname: "localhost".to_string(),
+          process:  process_name,
+          pid:      pid,
           s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
         })
       })
@@ -114,10 +120,13 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
     )
   }).and_then(|server_addr| {
     UdpSocket::bind(local).map(|socket| {
+      let (process_name, pid) = get_process_info().unwrap();
       Box::new(Writer {
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: hostname,
+        process:  process_name,
+        pid:      pid,
         s:        LoggerBackend::Udp(Box::new(socket), server_addr)
       })
     })
@@ -224,3 +233,11 @@ fn tempfile() -> Option<String> {
   None
 }
 
+fn get_process_info() -> Option<(String,i32)> {
+  env::current_exe().ok().and_then(|path| {
+    path.file_name().and_then(|os_name| os_name.to_str()).map(|name| name.to_string())
+  }).map(|name| {
+    let pid = unsafe { getpid() };
+    (name, pid)
+  })
+}
