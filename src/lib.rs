@@ -69,7 +69,7 @@ pub struct Writer {
   s:        LoggerBackend
 }
 
-pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn init(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   let mut path = "/dev/log".to_string();
   if ! std::fs::metadata(Path::new(&path)).is_ok() {
     path = "/var/run/syslog".to_string();
