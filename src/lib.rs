@@ -9,6 +9,7 @@ use std::result::Result;
 use std::io::{self, Write};
 use std::path::Path;
 use std::env;
+use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
@@ -16,6 +17,7 @@ use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
 
 pub type Priority = u8;
+pub type StructuredData = HashMap<String, HashMap<String, String>>;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy,Clone)]
@@ -156,12 +158,30 @@ impl Writer {
     return f;
   }
 
-  pub fn format_5424(&self, severity:Severity, message_id: i32, message: String) -> String {
-    let f =  format!("<{}> {} {} {} {} {} {}",
+  pub fn format_5424_structured_data(&self, data: StructuredData) -> String {
+    if data.is_empty() {
+      "-".to_string()
+    } else {
+      let mut res = String::new();
+      for (id, params) in data.iter() {
+        res = res + "["+id;
+        for (name,value) in params.iter() {
+          res = res + " " + name + "=\"" + value + "\"";
+        }
+        res = res + "]";
+      }
+
+      res
+    }
+  }
+
+  pub fn format_5424(&self, severity:Severity, message_id: i32, data: StructuredData, message: String) -> String {
+    let f =  format!("<{}> {} {} {} {} {} {} {} {}",
       self.encode_priority(severity, self.facility),
       1, // version
       time::now_utc().rfc3339(),
-      self.hostname, self.process, self.pid, message_id);
+      self.hostname, self.process, self.pid, message_id,
+      self.format_5424_structured_data(data), message);
     return f;
   }
 
@@ -181,8 +201,8 @@ impl Writer {
     self.send_raw(&formatted[..])
   }
 
-  pub fn send_5424(&mut self, severity: Severity, message_id: i32, message: String) -> Result<usize, io::Error> {
-    let formatted = self.format_5424(severity, message_id, message).into_bytes();
+  pub fn send_5424(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: String) -> Result<usize, io::Error> {
+    let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
