@@ -53,6 +53,10 @@ pub enum Facility {
   LOG_LOCAL7   = 23 << 3
 }
 
+pub enum LoggerBackend {
+  Unix(Box<UnixDatagram>,String)
+}
+
 pub struct Writer {
   facility: Facility,
   tag:      String,
@@ -60,8 +64,7 @@ pub struct Writer {
   network:  String,
   raddr:    String,
   client:   String,
-  server:   String,
-  s:        Box<UnixDatagram>
+  s:        LoggerBackend
 }
 
 pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
@@ -96,14 +99,12 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
           network:  "".to_string(),
           raddr:    address.clone(),
           client:   p.clone(),
-          server:   path.clone(),
-          s:        Box::new(s)
+          s:        LoggerBackend::Unix(Box::new(s), path.clone())
         })
       })
     }
   }
 }
-
 impl Writer {
   pub fn format_extended(&self, severity:Severity, message: String) -> String {
     let pid = unsafe { getpid() };
@@ -128,7 +129,9 @@ impl Writer {
 
   pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted = self.format(severity, message).into_bytes();
-    self.s.send_to(&formatted[..], Path::new(&self.server))
+    match self.s {
+      LoggerBackend::Unix(ref dgram, ref path) => dgram.send_to(&formatted[..], Path::new(&path))
+    }
   }
 
   pub fn emerg(&mut self, message: String) -> Result<usize, io::Error> {
