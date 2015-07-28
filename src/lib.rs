@@ -8,6 +8,7 @@ extern crate time;
 use std::result::Result;
 use std::io;
 use std::path::Path;
+use std::net::{SocketAddr,ToSocketAddrs,UdpSocket};
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
 
@@ -54,7 +55,9 @@ pub enum Facility {
 }
 
 pub enum LoggerBackend {
-  Unix(Box<UnixDatagram>,String)
+  /// Unix socket, temp file path, log file path
+  Unix(Box<UnixDatagram>,String,String),
+  Udp(Box<UdpSocket>, SocketAddr)
 }
 
 pub struct Writer {
@@ -62,8 +65,6 @@ pub struct Writer {
   tag:      String,
   hostname: String,
   network:  String,
-  raddr:    String,
-  client:   String,
   s:        LoggerBackend
 }
 
@@ -97,14 +98,34 @@ pub fn init(address: String, facility: Facility, tag: String) -> Result<Box<Writ
           tag:      tag.clone(),
           hostname: "".to_string(),
           network:  "".to_string(),
-          raddr:    address.clone(),
-          client:   p.clone(),
-          s:        LoggerBackend::Unix(Box::new(s), path.clone())
+          s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
         })
       })
     }
   }
 }
+
+pub fn init_UDP<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+  server.to_socket_addrs().and_then(|mut server_addr_opt| {
+    server_addr_opt.next().ok_or(
+      io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "invalid server address"
+      )
+    )
+  }).and_then(|server_addr| {
+    UdpSocket::bind(local).map(|socket| {
+      Box::new(Writer {
+        facility: facility.clone(),
+        tag:      tag.clone(),
+        hostname: "".to_string(),
+        network:  "".to_string(),
+        s:        LoggerBackend::Udp(Box::new(socket), server_addr)
+      })
+    })
+  })
+}
+
 impl Writer {
   pub fn format_extended(&self, severity:Severity, message: String) -> String {
     let pid = unsafe { getpid() };
@@ -130,7 +151,8 @@ impl Writer {
   pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
     let formatted = self.format(severity, message).into_bytes();
     match self.s {
-      LoggerBackend::Unix(ref dgram, ref path) => dgram.send_to(&formatted[..], Path::new(&path))
+      LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&formatted[..], Path::new(&path)),
+      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&formatted[..], addr)
     }
   }
 
@@ -169,9 +191,11 @@ impl Writer {
 
 impl Drop for Writer {
   fn drop(&mut self) {
-    let r = std::fs::remove_file(&Path::new(&self.client.clone()));
-    if r.is_err() {
-      println!("could not delete the client socket: {}", self.client);
+    if let LoggerBackend::Unix(_, ref client, _) = self.s {
+      let r = std::fs::remove_file(&Path::new(&client.clone()));
+      if r.is_err() {
+        println!("could not delete the client socket: {}", client);
+      }
     }
   }
 }
