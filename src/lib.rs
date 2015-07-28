@@ -65,7 +65,6 @@ pub struct Writer {
   facility: Facility,
   tag:      String,
   hostname: String,
-  network:  String,
   s:        LoggerBackend
 }
 
@@ -98,7 +97,6 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
           facility: facility.clone(),
           tag:      tag.clone(),
           hostname: "".to_string(),
-          network:  "".to_string(),
           s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
         })
       })
@@ -120,7 +118,6 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: Strin
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: "".to_string(),
-        network:  "".to_string(),
         s:        LoggerBackend::Udp(Box::new(socket), server_addr)
       })
     })
@@ -133,7 +130,6 @@ pub fn tcp<T: ToSocketAddrs>(server: T, facility: Facility, tag: String) -> Resu
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: "".to_string(),
-        network:  "".to_string(),
         s:        LoggerBackend::Tcp(Box::new(socket))
       })
   })
