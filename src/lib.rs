@@ -256,35 +256,35 @@ impl Logger {
   }
 
   pub fn emerg(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_EMERG, message)
+    self.send_3164(Severity::LOG_EMERG, message)
   }
 
   pub fn alert(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_ALERT, message)
+    self.send_3164(Severity::LOG_ALERT, message)
   }
 
   pub fn crit(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_CRIT, message)
+    self.send_3164(Severity::LOG_CRIT, message)
   }
 
   pub fn err(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_ERR, message)
+    self.send_3164(Severity::LOG_ERR, message)
   }
 
   pub fn warning(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_WARNING, message)
+    self.send_3164(Severity::LOG_WARNING, message)
   }
 
   pub fn notice(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_NOTICE, message)
+    self.send_3164(Severity::LOG_NOTICE, message)
   }
 
   pub fn info(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_INFO, message)
+    self.send_3164(Severity::LOG_INFO, message)
   }
 
   pub fn debug(&mut self, message: String) -> Result<usize, io::Error> {
-    self.send(Severity::LOG_DEBUG, message)
+    self.send_3164(Severity::LOG_DEBUG, message)
   }
 }
 
