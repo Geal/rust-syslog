@@ -3,7 +3,7 @@ extern crate syslog;
 use syslog::{Facility,Severity};
 
 fn main() {
-  match syslog::init(Facility::LOG_USER, String::from("example")) {
+  match syslog::unix(Facility::LOG_USER, String::from("example")) {
     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
     Ok(mut writer) => {
       let r = writer.send(Severity::LOG_ALERT, String::from("hello world"));

@@ -69,7 +69,7 @@ pub struct Writer {
   s:        LoggerBackend
 }
 
-pub fn init(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   let mut path = "/dev/log".to_string();
   if ! std::fs::metadata(Path::new(&path)).is_ok() {
     path = "/var/run/syslog".to_string();
@@ -106,7 +106,7 @@ pub fn init(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   }
 }
 
-pub fn init_UDP<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
       io::Error::new(
@@ -127,7 +127,7 @@ pub fn init_UDP<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: 
   })
 }
 
-pub fn init_TCP<T: ToSocketAddrs>(server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn tcp<T: ToSocketAddrs>(server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   TcpStream::connect(server).map(|socket| {
       Box::new(Writer {
         facility: facility.clone(),
