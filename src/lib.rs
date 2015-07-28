@@ -96,7 +96,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
         Box::new(Writer {
           facility: facility.clone(),
           tag:      tag.clone(),
-          hostname: "".to_string(),
+          hostname: "localhost".to_string(),
           s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
         })
       })
@@ -104,7 +104,7 @@ pub fn unix(facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   }
 }
 
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
       io::Error::new(
@@ -117,19 +117,19 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: Strin
       Box::new(Writer {
         facility: facility.clone(),
         tag:      tag.clone(),
-        hostname: "".to_string(),
+        hostname: hostname,
         s:        LoggerBackend::Udp(Box::new(socket), server_addr)
       })
     })
   })
 }
 
-pub fn tcp<T: ToSocketAddrs>(server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   TcpStream::connect(server).map(|socket| {
       Box::new(Writer {
         facility: facility.clone(),
         tag:      tag.clone(),
-        hostname: "".to_string(),
+        hostname: hostname,
         s:        LoggerBackend::Tcp(Box::new(socket))
       })
   })
