@@ -343,6 +343,7 @@ fn get_process_info() -> Option<(String,i32)> {
 }
 
 #[test]
+#[allow(unused_must_use)]
 fn message() {
   use std::thread;
   use std::sync::mpsc::channel;
@@ -350,7 +351,7 @@ fn message() {
   let r = unix(Facility::LOG_USER);
   //let r = tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER);
   if r.is_ok() {
-    let mut w = r.unwrap();
+    let w = r.unwrap();
     let m:String = w.format_3164(Severity::LOG_ALERT, "hello".to_string());
     println!("test: {}", m);
     let r = w.send_3164(Severity::LOG_ALERT, "pouet".to_string());
@@ -368,7 +369,6 @@ fn message() {
         //let mut logger = *shared;
         let message = format!("sent from {}", i);
         shared.send_3164(Severity::LOG_DEBUG, message.to_string());
-        println!("sent message from {}", i);
         tx.send(());
       });
     }
