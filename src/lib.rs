@@ -6,9 +6,9 @@ extern crate libc;
 extern crate time;
 
 use std::result::Result;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
-use std::net::{SocketAddr,ToSocketAddrs,UdpSocket};
+use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
 
@@ -57,7 +57,8 @@ pub enum Facility {
 pub enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(Box<UnixDatagram>,String,String),
-  Udp(Box<UdpSocket>, SocketAddr)
+  Udp(Box<UdpSocket>, SocketAddr),
+  Tcp(Box<TcpStream>)
 }
 
 pub struct Writer {
@@ -126,6 +127,18 @@ pub fn init_UDP<T: ToSocketAddrs>(local: T, server: T, facility: Facility, tag: 
   })
 }
 
+pub fn init_TCP<T: ToSocketAddrs>(server: T, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
+  TcpStream::connect(server).map(|socket| {
+      Box::new(Writer {
+        facility: facility.clone(),
+        tag:      tag.clone(),
+        hostname: "".to_string(),
+        network:  "".to_string(),
+        s:        LoggerBackend::Tcp(Box::new(socket))
+      })
+  })
+}
+
 impl Writer {
   pub fn format_extended(&self, severity:Severity, message: String) -> String {
     let pid = unsafe { getpid() };
@@ -152,7 +165,8 @@ impl Writer {
     let formatted = self.format(severity, message).into_bytes();
     match self.s {
       LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&formatted[..], Path::new(&path)),
-      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&formatted[..], addr)
+      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&formatted[..], addr),
+      LoggerBackend::Tcp(ref mut socket)          => socket.write(&formatted[..])
     }
   }
 
