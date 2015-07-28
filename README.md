@@ -37,3 +37,5 @@ fn main() {
   }
 }
 ```
+
+The struct `syslog::Logger` implements `Log` from the `log` crate, so it can be used as backend for other logging systems.
