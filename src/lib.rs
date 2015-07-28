@@ -32,6 +32,7 @@ extern crate unix_socket;
 extern crate rand;
 extern crate libc;
 extern crate time;
+extern crate log;
 
 use std::result::Result;
 use std::io::{self, Write};
@@ -43,8 +44,8 @@ use std::sync::{Arc, Mutex};
 
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
-
 use unix_socket::UnixDatagram;
+use log::{Log,LogRecord,LogMetadata,LogLevel};
 
 pub type Priority = u8;
 
@@ -297,6 +298,24 @@ impl Drop for Logger {
         println!("could not delete the client socket: {}", client);
       }
     }
+  }
+}
+
+#[allow(unused_variables,unused_must_use)]
+impl Log for Logger {
+  fn enabled(&self, metadata: &LogMetadata) -> bool {
+    true
+  }
+
+  fn log(&self, record: &LogRecord) {
+    let message = (format!("{}", record.args())).to_string();
+    match record.level() {
+      LogLevel::Error => self.err(message),
+      LogLevel::Warn  => self.warning(message),
+      LogLevel::Info  => self.info(message),
+      LogLevel::Debug => self.debug(message),
+      LogLevel::Trace => self.debug(message)
+    };
   }
 }
 
