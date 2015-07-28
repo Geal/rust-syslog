@@ -135,30 +135,33 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
 
 pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, tag: String) -> Result<Box<Writer>, io::Error> {
   TcpStream::connect(server).map(|socket| {
+      let (process_name, pid) = get_process_info().unwrap();
       Box::new(Writer {
         facility: facility.clone(),
         tag:      tag.clone(),
         hostname: hostname,
+        process:  process_name,
+        pid:      pid,
         s:        LoggerBackend::Tcp(Box::new(socket))
       })
   })
 }
 
 impl Writer {
-  pub fn format_extended(&self, severity:Severity, message: String) -> String {
-    let pid = unsafe { getpid() };
-    let f =  format!("<{}> {} {} {} {} {} {}",
+  pub fn format_3164(&self, severity:Severity, message: String) -> String {
+    let f =  format!("<{}>{} {} {}[{}]: {}",
       self.encode_priority(severity, self.facility),
-      1,// version
       time::now_utc().rfc3339(),
-      self.hostname, self.tag, pid, message);
+      self.hostname, self.process, self.pid, message);
     return f;
   }
 
-  pub fn format(&self, severity:Severity, message: String) -> String {
-    let f =  format!("<{:?}> {:?} {:?}",
-      self.encode_priority(severity, self.facility.clone()),
-      self.tag, message);
+  pub fn format_5424(&self, severity:Severity, message_id: i32, message: String) -> String {
+    let f =  format!("<{}> {} {} {} {} {} {}",
+      self.encode_priority(severity, self.facility),
+      1, // version
+      time::now_utc().rfc3339(),
+      self.hostname, self.process, self.pid, message_id);
     return f;
   }
 
@@ -167,11 +170,27 @@ impl Writer {
   }
 
   pub fn send(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
-    let formatted = self.format(severity, message).into_bytes();
+    let formatted =  format!("<{:?}> {:?} {:?}",
+      self.encode_priority(severity, self.facility.clone()),
+      self.tag, message).into_bytes();
+    self.send_raw(&formatted[..])
+  }
+
+  pub fn send_3164(&mut self, severity: Severity, message: String) -> Result<usize, io::Error> {
+    let formatted = self.format_3164(severity, message).into_bytes();
+    self.send_raw(&formatted[..])
+  }
+
+  pub fn send_5424(&mut self, severity: Severity, message_id: i32, message: String) -> Result<usize, io::Error> {
+    let formatted = self.format_5424(severity, message_id, message).into_bytes();
+    self.send_raw(&formatted[..])
+  }
+
+  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
-      LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&formatted[..], Path::new(&path)),
-      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&formatted[..], addr),
-      LoggerBackend::Tcp(ref mut socket)          => socket.write(&formatted[..])
+      LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&message[..], Path::new(&path)),
+      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
+      LoggerBackend::Tcp(ref mut socket)          => socket.write(&message[..])
     }
   }
 
