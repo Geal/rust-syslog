@@ -39,3 +39,9 @@ fn main() {
 ```
 
 The struct `syslog::Logger` implements `Log` from the `log` crate, so it can be used as backend for other logging systems.
+
+There are 3 functions to create loggers:
+
+* the `unix` function sends to the local syslog through a Unix socket: `syslog::unix(Facility::LOG_USER)`
+* the `tcp` function takes an address for a remote TCP syslog server and a hostname: `tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER)`
+* the `udp` function takes an address for a local port, and the address remote UDP syslog server and a hostname: `udp("127.0.0.1:1234", "127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER)`
