@@ -6,6 +6,8 @@ authors = [ "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"
 license = "MIT"
 repository = "https://github.com/Geal/rust-syslog"
+documentation = "http://rust.unhandledexpression.com/syslog/"
+keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
 unix_socket = "~0.4.3"
