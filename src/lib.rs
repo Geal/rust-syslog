@@ -313,6 +313,22 @@ impl Logger {
   pub fn debug(&self, message: String) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_DEBUG, message)
   }
+
+  pub fn process_name(&self) -> &String {
+    &self.process
+  }
+
+  pub fn process_id(&self) -> i32 {
+    self.pid
+  }
+
+  pub fn set_process_name(&mut self, name: String) {
+    self.process = name
+  }
+
+  pub fn set_process_id(&mut self, id: i32) {
+    self.pid = id
+  }
 }
 
 impl Drop for Logger {
