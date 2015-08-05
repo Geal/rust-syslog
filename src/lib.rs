@@ -141,6 +141,7 @@ pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
           s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
         })
       })
+
     }
   }
 }
@@ -251,7 +252,7 @@ impl Logger {
 
   /// Sends a basic log message of the format `<priority> message`
   pub fn send(&self, severity: Severity, message: String) -> Result<usize, io::Error> {
-    let formatted =  format!("<{:?}> {:?}",
+    let formatted =  format!("<{}> {}",
       self.encode_priority(severity, self.facility.clone()),
       message).into_bytes();
     self.send_raw(&formatted[..])
