@@ -45,7 +45,7 @@ use std::sync::{Arc, Mutex};
 use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
-use log::{Log,LogRecord,LogMetadata,LogLevel};
+use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
 pub type Priority = u8;
 
@@ -179,6 +179,30 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
         pid:      pid,
         s:        LoggerBackend::Tcp(Arc::new(Mutex::new(socket)))
       })
+  })
+}
+
+/// Unix socket Logger init function compatible with log crate
+#[allow(unused_variables)]
+pub fn init_unix(facility: Facility) -> Result<(), SetLoggerError> {
+  log::set_logger(|max_level| {
+    unix(facility).unwrap()
+  })
+}
+
+/// UDP Logger init function compatible with log crate
+#[allow(unused_variables)]
+pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<(), SetLoggerError> {
+  log::set_logger(|max_level| {
+    udp(local, server, hostname, facility).unwrap()
+  })
+}
+
+/// TCP Logger init function compatible with log crate
+#[allow(unused_variables)]
+pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<(), SetLoggerError> {
+  log::set_logger(|max_level| {
+    tcp(server, hostname, facility).unwrap()
   })
 }
 
