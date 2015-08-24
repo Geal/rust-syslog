@@ -11,7 +11,7 @@ syslog is available on [crates.io](https://crates.io/crates/syslog) and can be i
 
 ```toml
 [dependencies]
-syslog = "~2.1.0"
+syslog = "~3.0.0"
 ```
 
 ## documentation
