@@ -10,8 +10,7 @@ documentation = "http://rust.unhandledexpression.com/syslog/"
 keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
-unix_socket = "~0.4.3"
-rand        = "~0.3.8"
+unix_socket = "~0.4.4"
 libc        = "~0.1"
 time        = "~0.1"
 log         = "~0.3.1"

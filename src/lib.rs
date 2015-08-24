@@ -29,20 +29,17 @@
 #![crate_type = "lib"]
 
 extern crate unix_socket;
-extern crate rand;
 extern crate libc;
 extern crate time;
 extern crate log;
 
 use std::result::Result;
 use std::io::{self, Write};
-use std::path::Path;
 use std::env;
 use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use std::sync::{Arc, Mutex};
 
-use rand::{thread_rng, Rng};
 use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
@@ -92,7 +89,7 @@ pub enum Facility {
 
 enum LoggerBackend {
   /// Unix socket, temp file path, log file path
-  Unix(Box<UnixDatagram>,String,String),
+  Unix(UnixDatagram),
   Udp(Box<UdpSocket>, SocketAddr),
   Tcp(Arc<Mutex<TcpStream>>)
 }
@@ -108,42 +105,21 @@ pub struct Logger {
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
-  let mut path = "/dev/log".to_string();
-  if ! std::fs::metadata(Path::new(&path)).is_ok() {
-    path = "/var/run/syslog".to_string();
-    if ! std::fs::metadata(Path::new(&path)).is_ok() {
-      return Err(
-        io::Error::new(
-          io::ErrorKind::NotFound,
-          "could not find /dev/log nor /var/run/syslog"
-        )
-      );
-    }
-  }
-  match tempfile() {
-    None => {
-      println!("could not generate a tempfile");
-      Err(
-        io::Error::new(
-          io::ErrorKind::AlreadyExists,
-          "could not generate a temporary file"
-        )
-      )
-    },
-    Some(p) => {
-      UnixDatagram::bind(&p) .map( |s| {
-        let (process_name, pid) = get_process_info().unwrap();
-        Box::new(Logger {
-          facility: facility.clone(),
-          hostname: "localhost".to_string(),
-          process:  process_name,
-          pid:      pid,
-          s:        LoggerBackend::Unix(Box::new(s), p.clone(), path.clone())
-        })
-      })
-
-    }
-  }
+  let sock = try!(UnixDatagram::unbound());
+  try!(sock.connect("/dev/log")
+    .or_else(|e| if e.kind() == io::ErrorKind::NotFound {
+        sock.connect("/var/run/syslog")
+    } else {
+        Err(e)
+    }));
+  let (process_name, pid) = get_process_info().unwrap();
+  Ok(Box::new(Logger {
+    facility: facility.clone(),
+    hostname: "localhost".to_string(),
+    process:  process_name,
+    pid:      pid,
+    s:        LoggerBackend::Unix(sock),
+  }))
 }
 
 /// returns a UDP logger connecting `local` and `server`
@@ -273,7 +249,7 @@ impl Logger {
   /// Sends a message directly, without any formatting
   pub fn send_raw(&self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
-      LoggerBackend::Unix(ref dgram, _, ref path) => dgram.send_to(&message[..], Path::new(&path)),
+      LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
       LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
       LoggerBackend::Tcp(ref socket_wrap)         => {
         let mut socket = socket_wrap.lock().unwrap();
@@ -331,17 +307,6 @@ impl Logger {
   }
 }
 
-impl Drop for Logger {
-  fn drop(&mut self) {
-    if let LoggerBackend::Unix(_, ref client, _) = self.s {
-      let r = std::fs::remove_file(&Path::new(&client.clone()));
-      if r.is_err() {
-        println!("could not delete the client socket: {}", client);
-      }
-    }
-  }
-}
-
 #[allow(unused_variables,unused_must_use)]
 impl Log for Logger {
   fn enabled(&self, metadata: &LogMetadata) -> bool {
@@ -358,20 +323,6 @@ impl Log for Logger {
       LogLevel::Trace => self.debug(message)
     };
   }
-}
-
-fn tempfile() -> Option<String> {
-  let tmpdir = Path::new("/tmp");
-  let mut r = thread_rng();
-  for _ in 0..1000 {
-    let filename: String = r.gen_ascii_chars().take(16).collect();
-    let p = tmpdir.join(filename);
-    if ! std::fs::metadata(&p).is_ok() {
-      //return p.as_str().map(|s| s.to_string());
-      return p.to_str().map(|s| String::from(s));
-    }
-  }
-  None
 }
 
 fn get_process_info() -> Option<(String,i32)> {
