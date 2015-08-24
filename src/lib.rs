@@ -188,7 +188,7 @@ impl Logger {
   pub fn format_3164(&self, severity:Severity, message: String) -> String {
     let f =  format!("<{}>{} {} {}[{}]: {}",
       self.encode_priority(severity, self.facility),
-      time::now_utc().rfc3339(),
+      time::now().strftime("%b %d %T").unwrap(),
       self.hostname, self.process, self.pid, message);
     return f;
   }
