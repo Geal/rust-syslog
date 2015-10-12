@@ -76,7 +76,7 @@ enum LoggerBackend {
 /// Main logging structure
 pub struct Logger {
   facility: Facility,
-  hostname: String,
+  hostname: Option<String>,
   process:  String,
   pid:      i32,
   s:        LoggerBackend
@@ -98,7 +98,7 @@ pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
   let (process_name, pid) = get_process_info().unwrap();
   Ok(Box::new(Logger {
     facility: facility.clone(),
-    hostname: "localhost".to_string(),
+    hostname: None,
     process:  process_name,
     pid:      pid,
     s:        LoggerBackend::Unix(try!(detect_unix_socket())),
@@ -119,7 +119,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        hostname: hostname,
+        hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Udp(Box::new(socket), server_addr)
@@ -134,7 +134,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        hostname: hostname,
+        hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Tcp(Arc::new(Mutex::new(socket)))
@@ -197,7 +197,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
     max_level.set(log_level);
     Box::new(Logger {
         facility: facility.clone(),
-        hostname: "localhost".to_string(),
+        hostname: None,
         process:  application_name
             .map(|v| v.to_string())
             .unwrap_or(process_name),
@@ -210,11 +210,17 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
 impl Logger {
   /// format a message as a RFC 3164 log message
   pub fn format_3164(&self, severity:Severity, message: String) -> String {
-    let f =  format!("<{}>{} {} {}[{}]: {}",
-      self.encode_priority(severity, self.facility),
-      time::now().strftime("%b %d %T").unwrap(),
-      self.hostname, self.process, self.pid, message);
-    return f;
+    if let Some(ref hostname) = self.hostname {
+        format!("<{}>{} {} {}[{}]: {}",
+          self.encode_priority(severity, self.facility),
+          time::now().strftime("%b %d %T").unwrap(),
+          hostname, self.process, self.pid, message)
+    } else {
+        format!("<{}>{} {}[{}]: {}",
+          self.encode_priority(severity, self.facility),
+          time::now().strftime("%b %d %T").unwrap(),
+          self.process, self.pid, message)
+    }
   }
 
   /// format RFC 5424 structured data as `([id (name="value")*])*`
@@ -241,7 +247,8 @@ impl Logger {
       self.encode_priority(severity, self.facility),
       1, // version
       time::now_utc().rfc3339(),
-      self.hostname, self.process, self.pid, message_id,
+      self.hostname.as_ref().map(|x| &x[..]).unwrap_or("localhost"),
+      self.process, self.pid, message_id,
       self.format_5424_structured_data(data), message);
     return f;
   }
