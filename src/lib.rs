@@ -103,22 +103,26 @@ pub struct Logger {
   s:        LoggerBackend
 }
 
-/// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
+fn detect_unix_socket() -> Result<UnixDatagram, io::Error> {
   let sock = try!(UnixDatagram::unbound());
   try!(sock.connect("/dev/log")
     .or_else(|e| if e.kind() == io::ErrorKind::NotFound {
-        sock.connect("/var/run/syslog")
+      sock.connect("/var/run/syslog")
     } else {
-        Err(e)
+      Err(e)
     }));
+  Ok(sock)
+}
+
+/// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
+pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
   let (process_name, pid) = get_process_info().unwrap();
   Ok(Box::new(Logger {
     facility: facility.clone(),
     hostname: "localhost".to_string(),
     process:  process_name,
     pid:      pid,
-    s:        LoggerBackend::Unix(sock),
+    s:        LoggerBackend::Unix(try!(detect_unix_socket())),
   }))
 }
 
@@ -180,6 +184,47 @@ pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility
 pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<(), SetLoggerError> {
   log::set_logger(|max_level| {
     tcp(server, hostname, facility).unwrap()
+  })
+}
+
+/// Initializes logging subsystem for log crate
+///
+/// This tries to connect to syslog by following ways:
+///
+/// 1. Unix sockets /dev/log and /var/run/syslog (in this order)
+/// 2. Tcp connection to 127.0.0.1:601
+/// 3. Udp connection to 127.0.0.1:514
+///
+/// Note the last option usually (almost) never fails in this method. So
+/// this method doesn't return error even if there is no syslog.
+///
+/// If `application_name` is `None` name is derived from executable name
+pub fn init(facility: Facility, log_level: log::LogLevelFilter,
+    application_name: Option<&str>)
+    -> Result<(), SetLoggerError>
+{
+  let backend = detect_unix_socket().map(LoggerBackend::Unix)
+    .or_else(|_| {
+        TcpStream::connect(("127.0.0.1", 601))
+        .map(|s| LoggerBackend::Tcp(Arc::new(Mutex::new(s))))
+    })
+    .or_else(|_| {
+        let udp_addr = "127.0.0.1:514".parse().unwrap();
+        UdpSocket::bind(("127.0.0.1", 0))
+        .map(|s| LoggerBackend::Udp(Box::new(s), udp_addr))
+    }).unwrap_or_else(|e| panic!("Syslog UDP socket creating failed: {}", e));
+  let (process_name, pid) = get_process_info().unwrap();
+  log::set_logger(|max_level| {
+    max_level.set(log_level);
+    Box::new(Logger {
+        facility: facility.clone(),
+        hostname: "localhost".to_string(),
+        process:  application_name
+            .map(|v| v.to_string())
+            .unwrap_or(process_name),
+        pid:      pid,
+        s:        backend,
+    })
   })
 }
 
