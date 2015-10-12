@@ -44,10 +44,14 @@ use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
+mod facility;
+pub use facility::Facility;
+
 pub type Priority = u8;
 
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
+
 
 #[allow(non_camel_case_types)]
 #[derive(Copy,Clone)]
@@ -60,31 +64,6 @@ pub enum Severity {
   LOG_NOTICE,
   LOG_INFO,
   LOG_DEBUG
-}
-
-#[allow(non_camel_case_types)]
-#[derive(Copy,Clone)]
-pub enum Facility {
-  LOG_KERN     = 0  << 3,
-  LOG_USER     = 1  << 3,
-  LOG_MAIL     = 2  << 3,
-  LOG_DAEMON   = 3  << 3,
-  LOG_AUTH     = 4  << 3,
-  LOG_SYSLOG   = 5  << 3,
-  LOG_LPR      = 6  << 3,
-  LOG_NEWS     = 7  << 3,
-  LOG_UUCP     = 8  << 3,
-  LOG_CRON     = 9  << 3,
-  LOG_AUTHPRIV = 10 << 3,
-  LOG_FTP      = 11 << 3,
-  LOG_LOCAL0   = 16 << 3,
-  LOG_LOCAL1   = 17 << 3,
-  LOG_LOCAL2   = 18 << 3,
-  LOG_LOCAL3   = 19 << 3,
-  LOG_LOCAL4   = 20 << 3,
-  LOG_LOCAL5   = 21 << 3,
-  LOG_LOCAL6   = 22 << 3,
-  LOG_LOCAL7   = 23 << 3
 }
 
 enum LoggerBackend {
