@@ -11,7 +11,7 @@ syslog is available on [crates.io](https://crates.io/crates/syslog) and can be i
 
 ```toml
 [dependencies]
-syslog = "~3.0.0"
+syslog = "~3.1.0"
 ```
 
 ## documentation
@@ -29,7 +29,7 @@ fn main() {
   match syslog::unix(Facility::LOG_USER) {
     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
     Ok(writer) => {
-      let r = writer.send_3164(Severity::LOG_ALERT, String::from("hello world"));
+      let r = writer.send_3164(Severity::LOG_ALERT, "hello world");
       if r.is_err() {
         println!("error sending the log {}", r.err().expect("got error"));
       }
