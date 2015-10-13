@@ -44,10 +44,14 @@ use libc::funcs::posix88::unistd::getpid;
 use unix_socket::UnixDatagram;
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
+mod facility;
+pub use facility::Facility;
+
 pub type Priority = u8;
 
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
+
 
 #[allow(non_camel_case_types)]
 #[derive(Copy,Clone)]
@@ -62,31 +66,6 @@ pub enum Severity {
   LOG_DEBUG
 }
 
-#[allow(non_camel_case_types)]
-#[derive(Copy,Clone)]
-pub enum Facility {
-  LOG_KERN     = 0  << 3,
-  LOG_USER     = 1  << 3,
-  LOG_MAIL     = 2  << 3,
-  LOG_DAEMON   = 3  << 3,
-  LOG_AUTH     = 4  << 3,
-  LOG_SYSLOG   = 5  << 3,
-  LOG_LPR      = 6  << 3,
-  LOG_NEWS     = 7  << 3,
-  LOG_UUCP     = 8  << 3,
-  LOG_CRON     = 9  << 3,
-  LOG_AUTHPRIV = 10 << 3,
-  LOG_FTP      = 11 << 3,
-  LOG_LOCAL0   = 16 << 3,
-  LOG_LOCAL1   = 17 << 3,
-  LOG_LOCAL2   = 18 << 3,
-  LOG_LOCAL3   = 19 << 3,
-  LOG_LOCAL4   = 20 << 3,
-  LOG_LOCAL5   = 21 << 3,
-  LOG_LOCAL6   = 22 << 3,
-  LOG_LOCAL7   = 23 << 3
-}
-
 enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
@@ -97,28 +76,32 @@ enum LoggerBackend {
 /// Main logging structure
 pub struct Logger {
   facility: Facility,
-  hostname: String,
+  hostname: Option<String>,
   process:  String,
   pid:      i32,
   s:        LoggerBackend
 }
 
-/// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
+fn detect_unix_socket() -> Result<UnixDatagram, io::Error> {
   let sock = try!(UnixDatagram::unbound());
   try!(sock.connect("/dev/log")
     .or_else(|e| if e.kind() == io::ErrorKind::NotFound {
-        sock.connect("/var/run/syslog")
+      sock.connect("/var/run/syslog")
     } else {
-        Err(e)
+      Err(e)
     }));
+  Ok(sock)
+}
+
+/// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
+pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
   let (process_name, pid) = get_process_info().unwrap();
   Ok(Box::new(Logger {
     facility: facility.clone(),
-    hostname: "localhost".to_string(),
+    hostname: None,
     process:  process_name,
     pid:      pid,
-    s:        LoggerBackend::Unix(sock),
+    s:        LoggerBackend::Unix(try!(detect_unix_socket())),
   }))
 }
 
@@ -136,7 +119,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        hostname: hostname,
+        hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Udp(Box::new(socket), server_addr)
@@ -151,7 +134,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
       let (process_name, pid) = get_process_info().unwrap();
       Box::new(Logger {
         facility: facility.clone(),
-        hostname: hostname,
+        hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Tcp(Arc::new(Mutex::new(socket)))
@@ -183,14 +166,61 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
   })
 }
 
+/// Initializes logging subsystem for log crate
+///
+/// This tries to connect to syslog by following ways:
+///
+/// 1. Unix sockets /dev/log and /var/run/syslog (in this order)
+/// 2. Tcp connection to 127.0.0.1:601
+/// 3. Udp connection to 127.0.0.1:514
+///
+/// Note the last option usually (almost) never fails in this method. So
+/// this method doesn't return error even if there is no syslog.
+///
+/// If `application_name` is `None` name is derived from executable name
+pub fn init(facility: Facility, log_level: log::LogLevelFilter,
+    application_name: Option<&str>)
+    -> Result<(), SetLoggerError>
+{
+  let backend = detect_unix_socket().map(LoggerBackend::Unix)
+    .or_else(|_| {
+        TcpStream::connect(("127.0.0.1", 601))
+        .map(|s| LoggerBackend::Tcp(Arc::new(Mutex::new(s))))
+    })
+    .or_else(|_| {
+        let udp_addr = "127.0.0.1:514".parse().unwrap();
+        UdpSocket::bind(("127.0.0.1", 0))
+        .map(|s| LoggerBackend::Udp(Box::new(s), udp_addr))
+    }).unwrap_or_else(|e| panic!("Syslog UDP socket creating failed: {}", e));
+  let (process_name, pid) = get_process_info().unwrap();
+  log::set_logger(|max_level| {
+    max_level.set(log_level);
+    Box::new(Logger {
+        facility: facility.clone(),
+        hostname: None,
+        process:  application_name
+            .map(|v| v.to_string())
+            .unwrap_or(process_name),
+        pid:      pid,
+        s:        backend,
+    })
+  })
+}
+
 impl Logger {
   /// format a message as a RFC 3164 log message
   pub fn format_3164(&self, severity:Severity, message: String) -> String {
-    let f =  format!("<{}>{} {} {}[{}]: {}",
-      self.encode_priority(severity, self.facility),
-      time::now().strftime("%b %d %T").unwrap(),
-      self.hostname, self.process, self.pid, message);
-    return f;
+    if let Some(ref hostname) = self.hostname {
+        format!("<{}>{} {} {}[{}]: {}",
+          self.encode_priority(severity, self.facility),
+          time::now().strftime("%b %d %T").unwrap(),
+          hostname, self.process, self.pid, message)
+    } else {
+        format!("<{}>{} {}[{}]: {}",
+          self.encode_priority(severity, self.facility),
+          time::now().strftime("%b %d %T").unwrap(),
+          self.process, self.pid, message)
+    }
   }
 
   /// format RFC 5424 structured data as `([id (name="value")*])*`
@@ -217,7 +247,8 @@ impl Logger {
       self.encode_priority(severity, self.facility),
       1, // version
       time::now_utc().rfc3339(),
-      self.hostname, self.process, self.pid, message_id,
+      self.hostname.as_ref().map(|x| &x[..]).unwrap_or("localhost"),
+      self.process, self.pid, message_id,
       self.format_5424_structured_data(data), message);
     return f;
   }
