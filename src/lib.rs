@@ -143,25 +143,25 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
 }
 
 /// Unix socket Logger init function compatible with log crate
-#[allow(unused_variables)]
-pub fn init_unix(facility: Facility) -> Result<(), SetLoggerError> {
+pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
   log::set_logger(|max_level| {
+    max_level.set(log_level);
     unix(facility).unwrap()
   })
 }
 
 /// UDP Logger init function compatible with log crate
-#[allow(unused_variables)]
-pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<(), SetLoggerError> {
+pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
   log::set_logger(|max_level| {
+    max_level.set(log_level);
     udp(local, server, hostname, facility).unwrap()
   })
 }
 
 /// TCP Logger init function compatible with log crate
-#[allow(unused_variables)]
-pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<(), SetLoggerError> {
+pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
   log::set_logger(|max_level| {
+    max_level.set(log_level);
     tcp(server, hostname, facility).unwrap()
   })
 }
