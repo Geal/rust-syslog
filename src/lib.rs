@@ -40,7 +40,7 @@ use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use std::sync::{Arc, Mutex};
 
-use libc::funcs::posix88::unistd::getpid;
+use libc::getpid;
 use unix_socket::UnixDatagram;
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
