@@ -152,9 +152,10 @@ pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
-pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<(), SetLoggerError> {
-    log::set_logger(|_| {
-        unix_custom(facility, path).unwrap()
+pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<(), SetLoggerError> {
+    log::set_logger(|max_level| {
+      max_level.set(log_level);
+      unix_custom(facility, path).unwrap()
     })
 }
 
