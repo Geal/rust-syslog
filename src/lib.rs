@@ -40,6 +40,7 @@ use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use std::sync::{Arc, Mutex};
 use std::path::Path;
+use std::fmt;
 
 use libc::getpid;
 use unix_socket::UnixDatagram;
@@ -218,7 +219,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
 
 impl Logger {
   /// format a message as a RFC 3164 log message
-  pub fn format_3164(&self, severity:Severity, message: &str) -> String {
+  pub fn format_3164<T: fmt::Display>(&self, severity:Severity, message: T) -> String {
     if let Some(ref hostname) = self.hostname {
         format!("<{}>{} {} {}[{}]: {}",
           self.encode_priority(severity, self.facility),
@@ -251,7 +252,7 @@ impl Logger {
   }
 
   /// format a message as a RFC 5424 log message
-  pub fn format_5424(&self, severity:Severity, message_id: i32, data: StructuredData, message: &str) -> String {
+  pub fn format_5424<T: fmt::Display>(&self, severity:Severity, message_id: i32, data: StructuredData, message: T) -> String {
     let f =  format!("<{}> {} {} {} {} {} {} {} {}",
       self.encode_priority(severity, self.facility),
       1, // version
@@ -267,7 +268,7 @@ impl Logger {
   }
 
   /// Sends a basic log message of the format `<priority> message`
-  pub fn send(&self, severity: Severity, message: &str) -> Result<usize, io::Error> {
+  pub fn send<T: fmt::Display>(&self, severity: Severity, message: T) -> Result<usize, io::Error> {
     let formatted =  format!("<{}> {}",
       self.encode_priority(severity, self.facility.clone()),
       message).into_bytes();
@@ -275,13 +276,13 @@ impl Logger {
   }
 
   /// Sends a RFC 3164 log message
-  pub fn send_3164(&self, severity: Severity, message: &str) -> Result<usize, io::Error> {
+  pub fn send_3164<T: fmt::Display>(&self, severity: Severity, message: T) -> Result<usize, io::Error> {
     let formatted = self.format_3164(severity, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a RFC 5424 log message
-  pub fn send_5424(&self, severity: Severity, message_id: i32, data: StructuredData, message: &str) -> Result<usize, io::Error> {
+  pub fn send_5424<T: fmt::Display>(&self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize, io::Error> {
     let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
@@ -298,35 +299,35 @@ impl Logger {
     }
   }
 
-  pub fn emerg(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn emerg<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_EMERG, message)
   }
 
-  pub fn alert(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn alert<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ALERT, message)
   }
 
-  pub fn crit(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn crit<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_CRIT, message)
   }
 
-  pub fn err(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn err<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ERR, message)
   }
 
-  pub fn warning(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn warning<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_WARNING, message)
   }
 
-  pub fn notice(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn notice<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_NOTICE, message)
   }
 
-  pub fn info(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn info<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_INFO, message)
   }
 
-  pub fn debug(&self, message: &str) -> Result<usize, io::Error> {
+  pub fn debug<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_DEBUG, message)
   }
 
