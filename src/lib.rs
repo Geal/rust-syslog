@@ -346,6 +346,11 @@ impl Logger {
   pub fn set_process_id(&mut self, id: i32) {
     self.pid = id
   }
+  
+  /// Changes facility
+  pub fn set_facility(&mut self, facility: Facility) {
+    self.facility = facility;
+  }
 }
 
 #[allow(unused_variables,unused_must_use)]
