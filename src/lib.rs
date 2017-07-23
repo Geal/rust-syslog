@@ -43,7 +43,7 @@ use std::path::Path;
 use std::fmt;
 
 use libc::getpid;
-use unix_socket::UnixDatagram;
+use unix_socket::{UnixDatagram, UnixStream};
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
 mod facility;
@@ -71,6 +71,7 @@ pub enum Severity {
 enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
+  UnixStream(Arc<Mutex<UnixStream>>),
   Udp(Box<UdpSocket>, SocketAddr),
   Tcp(Arc<Mutex<TcpStream>>)
 }
@@ -97,14 +98,28 @@ pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
 pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Box<Logger>, io::Error> {
     let (process_name, pid) = get_process_info().unwrap();
     let sock = try!(UnixDatagram::unbound());
-    try!(sock.connect(path));
-    Ok(Box::new(Logger {
-        facility: facility.clone(),
-        hostname: None,
-        process:  process_name,
-        pid:      pid,
-        s:        LoggerBackend::Unix(sock),
-    }))
+    match sock.connect(&path) {
+        Ok(()) => {
+            Ok(Box::new(Logger {
+                facility: facility.clone(),
+                hostname: None,
+                process:  process_name,
+                pid:      pid,
+                s:        LoggerBackend::Unix(sock),
+            }))
+        },
+        Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
+            let sock = try!(UnixStream::connect(path));
+            Ok(Box::new(Logger {
+                facility: facility.clone(),
+                hostname: None,
+                process:  process_name,
+                pid:      pid,
+                s:        LoggerBackend::UnixStream(Arc::new(Mutex::new(sock))),
+            }))
+        },
+        Err(e) => Err(e),
+    }
 }
 
 /// returns a UDP logger connecting `local` and `server`
@@ -291,6 +306,10 @@ impl Logger {
   pub fn send_raw(&self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
       LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
+      LoggerBackend::UnixStream(ref socket_wrap) => {
+        let mut socket = socket_wrap.lock().unwrap();
+        socket.write(&message[..])
+      },
       LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
       LoggerBackend::Tcp(ref socket_wrap)         => {
         let mut socket = socket_wrap.lock().unwrap();
