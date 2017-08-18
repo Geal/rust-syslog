@@ -28,12 +28,12 @@
 //! ```
 #![crate_type = "lib"]
 
+#[macro_use] extern crate error_chain;
 extern crate unix_socket;
 extern crate libc;
 extern crate time;
 extern crate log;
 
-use std::result::Result;
 use std::io::{self, Write};
 use std::env;
 use std::collections::HashMap;
@@ -46,8 +46,19 @@ use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
 use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
 
+mod errors {
+ error_chain! {
+   errors { Initialization Format Write }
+
+   foreign_links {
+     Io(::std::io::Error) #[doc = "Link to a `std::error::Error` type."];
+   }
+ }
+}
+
 mod facility;
 pub use facility::Facility;
+pub use errors::*;
 
 pub type Priority = u8;
 
@@ -105,18 +116,21 @@ pub struct Logger {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Logger, io::Error> {
-    unix_custom(facility, "/dev/log").or_else(|e| if e.kind() == io::ErrorKind::NotFound {
-        unix_custom(facility, "/var/run/syslog")
-    } else {
-        Err(e)
+pub fn unix(facility: Facility) -> Result<Logger> {
+    unix_custom(facility, "/dev/log").or_else(|e| {
+      if let &ErrorKind::Io(ref io_err) = e.kind() {
+        if io_err.kind() == io::ErrorKind::NotFound {
+          return unix_custom(facility, "/var/run/syslog");
+        }
+      }
+      Err(e)
     })
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger, io::Error> {
-    let (process_name, pid) = get_process_info().unwrap();
-    let sock = try!(UnixDatagram::unbound());
+pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger> {
+    let (process_name, pid) = get_process_info()?;
+    let sock = UnixDatagram::unbound().chain_err(|| ErrorKind::Initialization)?;
     match sock.connect(&path) {
         Ok(()) => {
             Ok(Logger {
@@ -128,7 +142,7 @@ pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger
             })
         },
         Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
-            let sock = try!(UnixStream::connect(path));
+            let sock = UnixStream::connect(path).chain_err(|| ErrorKind::Initialization)?;
             Ok(Logger {
                 facility: facility.clone(),
                 hostname: None,
@@ -137,54 +151,49 @@ pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger
                 s:        LoggerBackend::UnixStream(sock),
             })
         },
-        Err(e) => Err(e),
+        Err(e) => Err(e).chain_err(|| ErrorKind::Initialization),
     }
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger, io::Error> {
-  server.to_socket_addrs().and_then(|mut server_addr_opt| {
-    server_addr_opt.next().ok_or(
-      io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "invalid server address"
-      )
-    )
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger> {
+  server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
+    server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
-    UdpSocket::bind(local).map(|socket| {
-      let (process_name, pid) = get_process_info().unwrap();
-      Logger {
+    UdpSocket::bind(local).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
+      let (process_name, pid) = get_process_info()?;
+      Ok(Logger {
         facility: facility.clone(),
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Udp(socket, server_addr)
-      }
+      })
     })
   })
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger, io::Error> {
-  TcpStream::connect(server).map(|socket| {
-      let (process_name, pid) = get_process_info().unwrap();
-      Logger {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger> {
+  TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
+      let (process_name, pid) = get_process_info()?;
+      Ok(Logger {
         facility: facility.clone(),
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Tcp(socket)
-      }
+      })
   })
 }
 
 /*
 /// Unix socket Logger init function compatible with log crate
-pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
+pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
   log::set_logger(|max_level| {
     max_level.set(log_level);
-    unix(facility).unwrap()
-  })
+    Box::new(unix(facility).unwrap())
+  }).chain_err(|| "could not create logger")
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
@@ -304,7 +313,7 @@ impl Logger {
   }
 
   /// Sends a basic log message of the format `<priority> message`
-  pub fn send<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize, io::Error> {
+  pub fn send<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize> {
     let formatted =  format!("<{}> {}",
       self.encode_priority(severity, self.facility.clone()),
       message).into_bytes();
@@ -312,61 +321,66 @@ impl Logger {
   }
 
   /// Sends a RFC 3164 log message
-  pub fn send_3164<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize, io::Error> {
+  pub fn send_3164<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize> {
     let formatted = self.format_3164(severity, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a RFC 5424 log message
-  pub fn send_5424<T: fmt::Display>(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize, io::Error> {
+  pub fn send_5424<T: fmt::Display>(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize> {
     let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a message directly, without any formatting
-  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize, io::Error> {
+  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize> {
     match self.s {
-      LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
+      LoggerBackend::Unix(ref dgram) => {
+        dgram.send(&message[..]).chain_err(|| ErrorKind::Write)
+      },
       LoggerBackend::UnixStream(ref mut socket) => {
         let null = [0 ; 1];
         socket.write(&message[..]).and_then(|_| socket.write(&null))
+          .chain_err(|| ErrorKind::Write)
       },
-      LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
+      LoggerBackend::Udp(ref socket, ref addr)    => {
+        socket.send_to(&message[..], addr).chain_err(|| ErrorKind::Write)
+      },
       LoggerBackend::Tcp(ref mut socket)         => {
-        socket.write(&message[..])
+        socket.write(&message[..]).chain_err(|| ErrorKind::Write)
       }
     }
   }
 
-  pub fn emerg<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn emerg<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_EMERG, message)
   }
 
-  pub fn alert<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn alert<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_ALERT, message)
   }
 
-  pub fn crit<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn crit<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_CRIT, message)
   }
 
-  pub fn err<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn err<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_ERR, message)
   }
 
-  pub fn warning<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn warning<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_WARNING, message)
   }
 
-  pub fn notice<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn notice<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_NOTICE, message)
   }
 
-  pub fn info<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn info<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_INFO, message)
   }
 
-  pub fn debug<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
+  pub fn debug<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
     self.send_3164(Severity::LOG_DEBUG, message)
   }
 
@@ -412,9 +426,10 @@ impl Log for Logger {
 }
 */
 
-fn get_process_info() -> Option<(String,i32)> {
-  env::current_exe().ok().and_then(|path| {
+fn get_process_info() -> Result<(String,i32)> {
+  env::current_exe().chain_err(|| ErrorKind::Initialization).and_then(|path| {
     path.file_name().and_then(|os_name| os_name.to_str()).map(|name| name.to_string())
+      .chain_err(|| ErrorKind::Initialization)
   }).map(|name| {
     let pid = unsafe { getpid() };
     (name, pid)
