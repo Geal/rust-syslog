@@ -105,7 +105,7 @@ pub struct Logger {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
+pub fn unix(facility: Facility) -> Result<Logger, io::Error> {
     unix_custom(facility, "/dev/log").or_else(|e| if e.kind() == io::ErrorKind::NotFound {
         unix_custom(facility, "/var/run/syslog")
     } else {
@@ -114,35 +114,35 @@ pub fn unix(facility: Facility) -> Result<Box<Logger>, io::Error> {
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Box<Logger>, io::Error> {
+pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger, io::Error> {
     let (process_name, pid) = get_process_info().unwrap();
     let sock = try!(UnixDatagram::unbound());
     match sock.connect(&path) {
         Ok(()) => {
-            Ok(Box::new(Logger {
+            Ok(Logger {
                 facility: facility.clone(),
                 hostname: None,
                 process:  process_name,
                 pid:      pid,
                 s:        LoggerBackend::Unix(sock),
-            }))
+            })
         },
         Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
             let sock = try!(UnixStream::connect(path));
-            Ok(Box::new(Logger {
+            Ok(Logger {
                 facility: facility.clone(),
                 hostname: None,
                 process:  process_name,
                 pid:      pid,
                 s:        LoggerBackend::UnixStream(sock),
-            }))
+            })
         },
         Err(e) => Err(e),
     }
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Box<Logger>, io::Error> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger, io::Error> {
   server.to_socket_addrs().and_then(|mut server_addr_opt| {
     server_addr_opt.next().ok_or(
       io::Error::new(
@@ -153,28 +153,28 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
   }).and_then(|server_addr| {
     UdpSocket::bind(local).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
-      Box::new(Logger {
+      Logger {
         facility: facility.clone(),
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Udp(socket, server_addr)
-      })
+      }
     })
   })
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Box<Logger>, io::Error> {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger, io::Error> {
   TcpStream::connect(server).map(|socket| {
       let (process_name, pid) = get_process_info().unwrap();
-      Box::new(Logger {
+      Logger {
         facility: facility.clone(),
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
         s:        LoggerBackend::Tcp(socket)
-      })
+      }
   })
 }
 
@@ -240,7 +240,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
   let (process_name, pid) = get_process_info().unwrap();
   log::set_logger(|max_level| {
     max_level.set(log_level);
-    Box::new(Logger {
+    Logger {
         facility: facility.clone(),
         hostname: None,
         process:  application_name
@@ -248,7 +248,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
             .unwrap_or(process_name),
         pid:      pid,
         s:        backend,
-    })
+    }
   }).map_err(|e| SyslogError{ description: e.description().to_owned() })
 }
 */
