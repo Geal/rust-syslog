@@ -34,13 +34,14 @@ extern crate libc;
 extern crate time;
 extern crate log;
 
-use std::io::{self, Write};
 use std::env;
+use std::path::Path;
+use std::error::Error;
+use std::io::{self, Write};
+use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
 use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
-use std::path::Path;
-use std::error::Error;
 
 use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
@@ -69,6 +70,47 @@ pub type Priority = u8;
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
 
+/// Main logging structure
+pub struct Logger<Backend: Write, T, Formatter: LogFormat<T>> {
+  formatter: Formatter,
+  backend:   Backend,
+  phantom:   PhantomData<T>,
+}
+
+impl<W:Write, T, F:LogFormat<T>> Logger<W, T, F> {
+  pub fn emerg(&mut self, message: T) -> Result<()> {
+    self.formatter.emerg(&mut self.backend, message)
+  }
+
+  pub fn alert(&mut self, message: T) -> Result<()> {
+    self.formatter.alert(&mut self.backend, message)
+  }
+
+  pub fn crit(&mut self, message: T) -> Result<()> {
+    self.formatter.crit(&mut self.backend, message)
+  }
+
+  pub fn err(&mut self, message: T) -> Result<()> {
+    self.formatter.err(&mut self.backend, message)
+  }
+
+  pub fn warning(&mut self, message: T) -> Result<()> {
+    self.formatter.warning(&mut self.backend, message)
+  }
+
+  pub fn notice(&mut self, message: T) -> Result<()> {
+    self.formatter.notice(&mut self.backend, message)
+  }
+
+  pub fn info(&mut self, message: T) -> Result<()> {
+    self.formatter.info(&mut self.backend, message)
+  }
+
+  pub fn debug(&mut self, message: T) -> Result<()> {
+    self.formatter.debug(&mut self.backend, message)
+  }
+}
+
 pub enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
@@ -77,11 +119,42 @@ pub enum LoggerBackend {
   Tcp(TcpStream)
 }
 
-/// Main logging structure
-pub struct Logger<Backend: Write, T, Formatter: LogFormat<T>> {
-  formatter: Formatter,
-  backend:   Backend,
-  phantom:   PhantomData<T>,
+impl Write for LoggerBackend {
+  /// Sends a message directly, without any formatting
+  fn write(&mut self, message: &[u8]) -> io::Result<usize> {
+    match self {
+      &mut LoggerBackend::Unix(ref dgram) => {
+        dgram.send(&message[..])
+      },
+      &mut LoggerBackend::UnixStream(ref mut socket) => {
+        let null = [0 ; 1];
+        socket.write(&message[..]).and_then(|_| socket.write(&null))
+      },
+      &mut LoggerBackend::Udp(ref socket, ref addr)    => {
+        socket.send_to(&message[..], addr)
+      },
+      &mut LoggerBackend::Tcp(ref mut socket)         => {
+        socket.write(&message[..])
+      }
+    }
+  }
+
+  fn flush(&mut self) -> io::Result<()> {
+    match self {
+      &mut LoggerBackend::Unix(_) => {
+        Ok(())
+      },
+      &mut LoggerBackend::UnixStream(ref mut socket) => {
+        socket.flush()
+      },
+      &mut LoggerBackend::Udp(_, _)  => {
+        Ok(())
+      },
+      &mut LoggerBackend::Tcp(ref mut socket)        => {
+        socket.flush()
+      }
+    }
+  }
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
@@ -151,7 +224,7 @@ pub fn udp<'a, T: ToSocketAddrs>(local: T, server: T, hostname:String, facility:
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<TcpStream, &'a str, Formatter3164>> {
+pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
     let (process_name, pid) = get_process_info()?;
     Ok(Logger {
@@ -161,42 +234,81 @@ pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility
                      process:  process_name,
                      pid:      pid,
                    },
-      backend:        socket,
+      backend:   LoggerBackend::Tcp(socket),
       phantom:   PhantomData,
     })
   })
 }
 
-/*
+pub struct BasicLogger {
+  logger: Arc<Mutex<Logger<LoggerBackend, &'static str, Formatter3164>>>,
+}
+
+impl BasicLogger {
+  pub fn new(logger: Logger<LoggerBackend, &'static str, Formatter3164>) -> BasicLogger {
+    BasicLogger {
+      logger: Arc::new(Mutex::new(logger)),
+    }
+  }
+}
+
+#[allow(unused_variables,unused_must_use)]
+impl Log for BasicLogger {
+  fn enabled(&self, metadata: &LogMetadata) -> bool {
+    true
+  }
+
+  fn log(&self, record: &LogRecord) {
+    //FIXME: temporary patch to compile
+    let message = "a"; //&(format!("{}", record.args()));
+    let mut logger = self.logger.lock().unwrap();
+    match record.level() {
+      LogLevel::Error => logger.err(message),
+      LogLevel::Warn  => logger.warning(message),
+      LogLevel::Info  => logger.info(message),
+      LogLevel::Debug => logger.debug(message),
+      LogLevel::Trace => logger.debug(message)
+    };
+  }
+}
+
 /// Unix socket Logger init function compatible with log crate
 pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
-  log::set_logger(|max_level| {
-    max_level.set(log_level);
-    Box::new(unix(facility).unwrap())
-  }).chain_err(|| "could not create logger")
+  unix(facility).and_then(|logger| {
+    log::set_logger(|max_level| {
+      max_level.set(log_level);
+      Box::new(BasicLogger::new(logger))
+    }).chain_err(|| ErrorKind::Initialization)
+  })
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
-pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<(), SetLoggerError> {
+pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<()> {
+  unix_custom(facility, path).and_then(|logger| {
     log::set_logger(|max_level| {
       max_level.set(log_level);
-      unix_custom(facility, path).unwrap()
-    })
+      Box::new(BasicLogger::new(logger))
+    }).chain_err(|| ErrorKind::Initialization)
+  })
 }
 
 /// UDP Logger init function compatible with log crate
-pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
-  log::set_logger(|max_level| {
-    max_level.set(log_level);
-    udp(local, server, hostname, facility).unwrap()
+pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+  udp(local, server, hostname, facility).and_then(|logger| {
+    log::set_logger(|max_level| {
+      max_level.set(log_level);
+      Box::new(BasicLogger::new(logger))
+    }).chain_err(|| ErrorKind::Initialization)
   })
 }
 
 /// TCP Logger init function compatible with log crate
-pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
-  log::set_logger(|max_level| {
-    max_level.set(log_level);
-    tcp(server, hostname, facility).unwrap()
+pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+  tcp(server, hostname, facility).and_then(|logger| {
+    log::set_logger(|max_level| {
+      max_level.set(log_level);
+      Box::new(BasicLogger::new(logger))
+    }).chain_err(|| ErrorKind::Initialization)
   })
 }
 
@@ -214,9 +326,9 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
 /// If `application_name` is `None` name is derived from executable name
 pub fn init(facility: Facility, log_level: log::LogLevelFilter,
     application_name: Option<&str>)
-    -> Result<(), SyslogError>
+    -> Result<()>
 {
-  let backend = unix(facility).map(|logger| logger.s)
+  let backend = unix(facility).map(|logger| logger.backend)
     .or_else(|_| {
         TcpStream::connect(("127.0.0.1", 601))
         .map(|s| LoggerBackend::Tcp(s))
@@ -225,93 +337,23 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
         let udp_addr = "127.0.0.1:514".parse().unwrap();
         UdpSocket::bind(("127.0.0.1", 0))
         .map(|s| LoggerBackend::Udp(s, udp_addr))
-    }).map_err(|e| SyslogError{ description: e.description().to_owned() })?;
-  let (process_name, pid) = get_process_info().unwrap();
+    })?;
+  let (process_name, pid) = get_process_info()?;
   log::set_logger(|max_level| {
     max_level.set(log_level);
-    Logger {
-        facility: facility.clone(),
-        hostname: None,
-        process:  application_name
-            .map(|v| v.to_string())
-            .unwrap_or(process_name),
-        pid:      pid,
-        s:        backend,
-    }
-  }).map_err(|e| SyslogError{ description: e.description().to_owned() })
-}
-*/
-
-impl<W:Write, T, F:LogFormat<T>> Logger<W, T, F> {
-  pub fn emerg(&mut self, message: T) -> Result<()> {
-    self.formatter.emerg(&mut self.backend, message)
-  }
-
-  pub fn alert(&mut self, message: T) -> Result<()> {
-    self.formatter.alert(&mut self.backend, message)
-  }
-
-  pub fn crit(&mut self, message: T) -> Result<()> {
-    self.formatter.crit(&mut self.backend, message)
-  }
-
-  pub fn err(&mut self, message: T) -> Result<()> {
-    self.formatter.err(&mut self.backend, message)
-  }
-
-  pub fn warning(&mut self, message: T) -> Result<()> {
-    self.formatter.warning(&mut self.backend, message)
-  }
-
-  pub fn notice(&mut self, message: T) -> Result<()> {
-    self.formatter.notice(&mut self.backend, message)
-  }
-
-  pub fn info(&mut self, message: T) -> Result<()> {
-    self.formatter.info(&mut self.backend, message)
-  }
-
-  pub fn debug(&mut self, message: T) -> Result<()> {
-    self.formatter.debug(&mut self.backend, message)
-  }
-}
-
-impl Write for LoggerBackend {
-  /// Sends a message directly, without any formatting
-  fn write(&mut self, message: &[u8]) -> io::Result<usize> {
-    match self {
-      &mut LoggerBackend::Unix(ref dgram) => {
-        dgram.send(&message[..])
-      },
-      &mut LoggerBackend::UnixStream(ref mut socket) => {
-        let null = [0 ; 1];
-        socket.write(&message[..]).and_then(|_| socket.write(&null))
-      },
-      &mut LoggerBackend::Udp(ref socket, ref addr)    => {
-        socket.send_to(&message[..], addr)
-      },
-      &mut LoggerBackend::Tcp(ref mut socket)         => {
-        socket.write(&message[..])
-      }
-    }
-  }
-
-  fn flush(&mut self) -> io::Result<()> {
-    match self {
-      &mut LoggerBackend::Unix(_) => {
-        Ok(())
-      },
-      &mut LoggerBackend::UnixStream(ref mut socket) => {
-        socket.flush()
-      },
-      &mut LoggerBackend::Udp(_, _)  => {
-        Ok(())
-      },
-      &mut LoggerBackend::Tcp(ref mut socket)        => {
-        socket.flush()
-      }
-    }
-  }
+    Box::new(BasicLogger::new(Logger {
+      formatter: Formatter3164 {
+                   facility: facility.clone(),
+                   hostname: None,
+                   process:  application_name
+                     .map(|v| v.to_string())
+                     .unwrap_or(process_name),
+                     pid:      pid,
+                 },
+      backend:   backend,
+      phantom:   PhantomData,
+    }))
+  }).chain_err(|| ErrorKind::Initialization)
 }
 
 /*
