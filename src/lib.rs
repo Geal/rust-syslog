@@ -38,7 +38,6 @@ use std::io::{self, Write};
 use std::env;
 use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
-use std::sync::{Arc, Mutex};
 use std::path::Path;
 use std::fmt;
 use std::error::Error;
@@ -72,9 +71,9 @@ pub enum Severity {
 enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
-  UnixStream(Arc<Mutex<UnixStream>>),
-  Udp(Box<UdpSocket>, SocketAddr),
-  Tcp(Arc<Mutex<TcpStream>>)
+  UnixStream(UnixStream),
+  Udp(UdpSocket, SocketAddr),
+  Tcp(TcpStream)
 }
 
 #[derive(Debug)]
@@ -135,7 +134,7 @@ pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Box<Lo
                 hostname: None,
                 process:  process_name,
                 pid:      pid,
-                s:        LoggerBackend::UnixStream(Arc::new(Mutex::new(sock))),
+                s:        LoggerBackend::UnixStream(sock),
             }))
         },
         Err(e) => Err(e),
@@ -159,7 +158,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
-        s:        LoggerBackend::Udp(Box::new(socket), server_addr)
+        s:        LoggerBackend::Udp(socket, server_addr)
       })
     })
   })
@@ -174,11 +173,12 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
-        s:        LoggerBackend::Tcp(Arc::new(Mutex::new(socket)))
+        s:        LoggerBackend::Tcp(socket)
       })
   })
 }
 
+/*
 /// Unix socket Logger init function compatible with log crate
 pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(), SetLoggerError> {
   log::set_logger(|max_level| {
@@ -230,12 +230,12 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
   let backend = unix(facility).map(|logger| logger.s)
     .or_else(|_| {
         TcpStream::connect(("127.0.0.1", 601))
-        .map(|s| LoggerBackend::Tcp(Arc::new(Mutex::new(s))))
+        .map(|s| LoggerBackend::Tcp(s))
     })
     .or_else(|_| {
         let udp_addr = "127.0.0.1:514".parse().unwrap();
         UdpSocket::bind(("127.0.0.1", 0))
-        .map(|s| LoggerBackend::Udp(Box::new(s), udp_addr))
+        .map(|s| LoggerBackend::Udp(s, udp_addr))
     }).map_err(|e| SyslogError{ description: e.description().to_owned() })?;
   let (process_name, pid) = get_process_info().unwrap();
   log::set_logger(|max_level| {
@@ -251,6 +251,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
     })
   }).map_err(|e| SyslogError{ description: e.description().to_owned() })
 }
+*/
 
 impl Logger {
   /// format a message as a RFC 3164 log message
@@ -303,7 +304,7 @@ impl Logger {
   }
 
   /// Sends a basic log message of the format `<priority> message`
-  pub fn send<T: fmt::Display>(&self, severity: Severity, message: T) -> Result<usize, io::Error> {
+  pub fn send<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize, io::Error> {
     let formatted =  format!("<{}> {}",
       self.encode_priority(severity, self.facility.clone()),
       message).into_bytes();
@@ -311,63 +312,61 @@ impl Logger {
   }
 
   /// Sends a RFC 3164 log message
-  pub fn send_3164<T: fmt::Display>(&self, severity: Severity, message: T) -> Result<usize, io::Error> {
+  pub fn send_3164<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize, io::Error> {
     let formatted = self.format_3164(severity, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a RFC 5424 log message
-  pub fn send_5424<T: fmt::Display>(&self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize, io::Error> {
+  pub fn send_5424<T: fmt::Display>(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize, io::Error> {
     let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
     self.send_raw(&formatted[..])
   }
 
   /// Sends a message directly, without any formatting
-  pub fn send_raw(&self, message: &[u8]) -> Result<usize, io::Error> {
+  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize, io::Error> {
     match self.s {
       LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
-      LoggerBackend::UnixStream(ref socket_wrap) => {
-        let mut socket = socket_wrap.lock().unwrap();
+      LoggerBackend::UnixStream(ref mut socket) => {
         let null = [0 ; 1];
         socket.write(&message[..]).and_then(|_| socket.write(&null))
       },
       LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
-      LoggerBackend::Tcp(ref socket_wrap)         => {
-        let mut socket = socket_wrap.lock().unwrap();
+      LoggerBackend::Tcp(ref mut socket)         => {
         socket.write(&message[..])
       }
     }
   }
 
-  pub fn emerg<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn emerg<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_EMERG, message)
   }
 
-  pub fn alert<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn alert<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ALERT, message)
   }
 
-  pub fn crit<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn crit<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_CRIT, message)
   }
 
-  pub fn err<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn err<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_ERR, message)
   }
 
-  pub fn warning<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn warning<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_WARNING, message)
   }
 
-  pub fn notice<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn notice<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_NOTICE, message)
   }
 
-  pub fn info<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn info<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_INFO, message)
   }
 
-  pub fn debug<T: fmt::Display>(&self, message: T) -> Result<usize, io::Error> {
+  pub fn debug<T: fmt::Display>(&mut self, message: T) -> Result<usize, io::Error> {
     self.send_3164(Severity::LOG_DEBUG, message)
   }
 
@@ -393,6 +392,7 @@ impl Logger {
   }
 }
 
+/*
 #[allow(unused_variables,unused_must_use)]
 impl Log for Logger {
   fn enabled(&self, metadata: &LogMetadata) -> bool {
@@ -410,6 +410,7 @@ impl Log for Logger {
     };
   }
 }
+*/
 
 fn get_process_info() -> Option<(String,i32)> {
   env::current_exe().ok().and_then(|path| {
