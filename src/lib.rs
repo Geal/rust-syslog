@@ -36,16 +36,15 @@ extern crate log;
 
 use std::env;
 use std::path::Path;
-use std::error::Error;
+use std::fmt::Display;
 use std::io::{self, Write};
 use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
-use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 
 use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
-use log::{Log,LogRecord,LogMetadata,LogLevel,SetLoggerError};
+use log::{Log,LogRecord,LogMetadata,LogLevel};
 
 mod errors {
  error_chain! {
@@ -158,11 +157,11 @@ impl Write for LoggerBackend {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix<'a>(facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
-    unix_custom(facility, "/dev/log").or_else(|e| {
+pub fn unix<U: Display, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
+    unix_custom(formatter.clone(), "/dev/log").or_else(|e| {
       if let &ErrorKind::Io(ref io_err) = e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
-          return unix_custom(facility, "/var/run/syslog");
+          return unix_custom(formatter, "/var/run/syslog");
         }
       }
       Err(e)
@@ -170,31 +169,20 @@ pub fn unix<'a>(facility: Facility) -> Result<Logger<LoggerBackend, &'a str, For
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<'a, P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
-    let (process_name, pid) = get_process_info()?;
+pub fn unix_custom<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
     let sock = UnixDatagram::unbound().chain_err(|| ErrorKind::Initialization)?;
     match sock.connect(&path) {
         Ok(()) => {
             Ok(Logger {
-              formatter: Formatter3164 {
-                             facility: facility.clone(),
-                             hostname: None,
-                             process:  process_name,
-                             pid:      pid,
-                },
-                backend:   LoggerBackend::Unix(sock),
-                phantom:   PhantomData,
+              formatter: formatter,
+              backend:   LoggerBackend::Unix(sock),
+              phantom:   PhantomData,
             })
         },
         Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
             let sock = UnixStream::connect(path).chain_err(|| ErrorKind::Initialization)?;
             Ok(Logger {
-                formatter: Formatter3164 {
-                             facility: facility.clone(),
-                             hostname: None,
-                             process:  process_name,
-                             pid:      pid,
-                },
+                formatter: formatter,
                 backend:   LoggerBackend::UnixStream(sock),
                 phantom:   PhantomData,
             })
@@ -203,19 +191,13 @@ pub fn unix_custom<'a, P: AsRef<Path>>(facility: Facility, path: P) -> Result<Lo
     }
 }
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<'a, T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
+pub fn udp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, U, F>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
     server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
     UdpSocket::bind(local).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
-      let (process_name, pid) = get_process_info()?;
       Ok(Logger {
-        formatter: Formatter3164 {
-                     facility: facility.clone(),
-                     hostname: Some(hostname),
-                     process:  process_name,
-                     pid:      pid,
-                   },
+        formatter: formatter,
         backend:   LoggerBackend::Udp(socket, server_addr),
         phantom:   PhantomData,
       })
@@ -224,16 +206,10 @@ pub fn udp<'a, T: ToSocketAddrs>(local: T, server: T, hostname:String, facility:
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
+pub fn tcp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, server: T) -> Result<Logger<LoggerBackend, U, F>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
-    let (process_name, pid) = get_process_info()?;
     Ok(Logger {
-      formatter: Formatter3164 {
-                     facility: facility.clone(),
-                     hostname: Some(hostname),
-                     process:  process_name,
-                     pid:      pid,
-                   },
+      formatter: formatter,
       backend:   LoggerBackend::Tcp(socket),
       phantom:   PhantomData,
     })
@@ -241,11 +217,11 @@ pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility
 }
 
 pub struct BasicLogger {
-  logger: Arc<Mutex<Logger<LoggerBackend, &'static str, Formatter3164>>>,
+  logger: Arc<Mutex<Logger<LoggerBackend, String, Formatter3164>>>,
 }
 
 impl BasicLogger {
-  pub fn new(logger: Logger<LoggerBackend, &'static str, Formatter3164>) -> BasicLogger {
+  pub fn new(logger: Logger<LoggerBackend, String, Formatter3164>) -> BasicLogger {
     BasicLogger {
       logger: Arc::new(Mutex::new(logger)),
     }
@@ -260,7 +236,7 @@ impl Log for BasicLogger {
 
   fn log(&self, record: &LogRecord) {
     //FIXME: temporary patch to compile
-    let message = "a"; //&(format!("{}", record.args()));
+    let message = format!("{}", record.args());
     let mut logger = self.logger.lock().unwrap();
     match record.level() {
       LogLevel::Error => logger.err(message),
@@ -274,7 +250,14 @@ impl Log for BasicLogger {
 
 /// Unix socket Logger init function compatible with log crate
 pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
-  unix(facility).and_then(|logger| {
+  let (process_name, pid) = get_process_info()?;
+  let formatter = Formatter3164 {
+    facility: facility.clone(),
+    hostname: None,
+    process:  process_name,
+    pid:      pid,
+  };
+  unix(formatter).and_then(|logger| {
     log::set_logger(|max_level| {
       max_level.set(log_level);
       Box::new(BasicLogger::new(logger))
@@ -284,7 +267,14 @@ pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
 pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<()> {
-  unix_custom(facility, path).and_then(|logger| {
+  let (process_name, pid) = get_process_info()?;
+  let formatter = Formatter3164 {
+    facility: facility.clone(),
+    hostname: None,
+    process:  process_name,
+    pid:      pid,
+  };
+  unix_custom(formatter, path).and_then(|logger| {
     log::set_logger(|max_level| {
       max_level.set(log_level);
       Box::new(BasicLogger::new(logger))
@@ -294,7 +284,14 @@ pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogL
 
 /// UDP Logger init function compatible with log crate
 pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
-  udp(local, server, hostname, facility).and_then(|logger| {
+  let (process_name, pid) = get_process_info()?;
+  let formatter = Formatter3164 {
+    facility: facility.clone(),
+    hostname: Some(hostname),
+    process:  process_name,
+    pid:      pid,
+  };
+  udp(formatter, local, server).and_then(|logger| {
     log::set_logger(|max_level| {
       max_level.set(log_level);
       Box::new(BasicLogger::new(logger))
@@ -304,7 +301,14 @@ pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility
 
 /// TCP Logger init function compatible with log crate
 pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
-  tcp(server, hostname, facility).and_then(|logger| {
+  let (process_name, pid) = get_process_info()?;
+  let formatter = Formatter3164 {
+    facility: facility.clone(),
+    hostname: Some(hostname),
+    process:  process_name,
+    pid:      pid,
+  };
+  tcp(formatter, server).and_then(|logger| {
     log::set_logger(|max_level| {
       max_level.set(log_level);
       Box::new(BasicLogger::new(logger))
@@ -328,7 +332,17 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
     application_name: Option<&str>)
     -> Result<()>
 {
-  let backend = unix(facility).map(|logger| logger.backend)
+  let (process_name, pid) = get_process_info()?;
+  let formatter = Formatter3164 {
+    facility: facility.clone(),
+    hostname: None,
+    process:  application_name
+      .map(|v| v.to_string())
+      .unwrap_or(process_name),
+    pid:      pid,
+  };
+
+  let backend = unix(formatter.clone()).map(|logger: Logger<LoggerBackend, String, Formatter3164>| logger.backend)
     .or_else(|_| {
         TcpStream::connect(("127.0.0.1", 601))
         .map(|s| LoggerBackend::Tcp(s))
@@ -338,18 +352,10 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
         UdpSocket::bind(("127.0.0.1", 0))
         .map(|s| LoggerBackend::Udp(s, udp_addr))
     })?;
-  let (process_name, pid) = get_process_info()?;
   log::set_logger(|max_level| {
     max_level.set(log_level);
     Box::new(BasicLogger::new(Logger {
-      formatter: Formatter3164 {
-                   facility: facility.clone(),
-                   hostname: None,
-                   process:  application_name
-                     .map(|v| v.to_string())
-                     .unwrap_or(process_name),
-                     pid:      pid,
-                 },
+      formatter: formatter,
       backend:   backend,
       phantom:   PhantomData,
     }))

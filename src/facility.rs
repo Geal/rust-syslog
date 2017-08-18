@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 #[allow(non_camel_case_types)]
-#[derive(Copy,Clone)]
+#[derive(Copy,Clone,Debug)]
 pub enum Facility {
   LOG_KERN     = 0  << 3,
   LOG_USER     = 1  << 3,

@@ -64,6 +64,7 @@ pub trait LogFormat<T> {
   }
 }
 
+#[derive(Clone,Debug)]
 pub struct Formatter3164 {
   pub facility: Facility,
   pub hostname: Option<String>,
@@ -90,6 +91,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
 
+#[derive(Clone,Debug)]
 pub struct Formatter5424 {
   pub facility: Facility,
   pub hostname: Option<String>,
