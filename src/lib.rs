@@ -79,7 +79,7 @@ pub enum Severity {
   LOG_DEBUG
 }
 
-enum LoggerBackend {
+pub enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
   UnixStream(UnixStream),
@@ -107,16 +107,16 @@ impl fmt::Display for SyslogError {
 }
 
 /// Main logging structure
-pub struct Logger {
+pub struct Logger<Backend: Write> {
   facility: Facility,
   hostname: Option<String>,
   process:  String,
   pid:      i32,
-  s:        LoggerBackend
+  s:        Backend
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Logger> {
+pub fn unix(facility: Facility) -> Result<Logger<LoggerBackend>> {
     unix_custom(facility, "/dev/log").or_else(|e| {
       if let &ErrorKind::Io(ref io_err) = e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
@@ -128,7 +128,7 @@ pub fn unix(facility: Facility) -> Result<Logger> {
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger> {
+pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger<LoggerBackend>> {
     let (process_name, pid) = get_process_info()?;
     let sock = UnixDatagram::unbound().chain_err(|| ErrorKind::Initialization)?;
     match sock.connect(&path) {
@@ -156,7 +156,7 @@ pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger> {
+pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger<LoggerBackend>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
     server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
@@ -174,7 +174,7 @@ pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Fac
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger> {
+pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<TcpStream>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
       let (process_name, pid) = get_process_info()?;
       Ok(Logger {
@@ -182,7 +182,7 @@ pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) ->
         hostname: Some(hostname),
         process:  process_name,
         pid:      pid,
-        s:        LoggerBackend::Tcp(socket)
+        s:        socket
       })
   })
 }
@@ -262,7 +262,7 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
 }
 */
 
-impl Logger {
+impl<W:Write> Logger<W> {
   /// format a message as a RFC 3164 log message
   pub fn format_3164<T: fmt::Display>(&self, severity:Severity, message: T) -> String {
     if let Some(ref hostname) = self.hostname {
@@ -334,22 +334,7 @@ impl Logger {
 
   /// Sends a message directly, without any formatting
   pub fn send_raw(&mut self, message: &[u8]) -> Result<usize> {
-    match self.s {
-      LoggerBackend::Unix(ref dgram) => {
-        dgram.send(&message[..]).chain_err(|| ErrorKind::Write)
-      },
-      LoggerBackend::UnixStream(ref mut socket) => {
-        let null = [0 ; 1];
-        socket.write(&message[..]).and_then(|_| socket.write(&null))
-          .chain_err(|| ErrorKind::Write)
-      },
-      LoggerBackend::Udp(ref socket, ref addr)    => {
-        socket.send_to(&message[..], addr).chain_err(|| ErrorKind::Write)
-      },
-      LoggerBackend::Tcp(ref mut socket)         => {
-        socket.write(&message[..]).chain_err(|| ErrorKind::Write)
-      }
-    }
+    self.s.write(message).chain_err(|| ErrorKind::Write)
   }
 
   pub fn emerg<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
@@ -399,10 +384,48 @@ impl Logger {
   pub fn set_process_id(&mut self, id: i32) {
     self.pid = id
   }
-  
+
   /// Changes facility
   pub fn set_facility(&mut self, facility: Facility) {
     self.facility = facility;
+  }
+}
+
+impl Write for LoggerBackend {
+  /// Sends a message directly, without any formatting
+  fn write(&mut self, message: &[u8]) -> io::Result<usize> {
+    match self {
+      &mut LoggerBackend::Unix(ref dgram) => {
+        dgram.send(&message[..])
+      },
+      &mut LoggerBackend::UnixStream(ref mut socket) => {
+        let null = [0 ; 1];
+        socket.write(&message[..]).and_then(|_| socket.write(&null))
+      },
+      &mut LoggerBackend::Udp(ref socket, ref addr)    => {
+        socket.send_to(&message[..], addr)
+      },
+      &mut LoggerBackend::Tcp(ref mut socket)         => {
+        socket.write(&message[..])
+      }
+    }
+  }
+
+  fn flush(&mut self) -> io::Result<()> {
+    match self {
+      &mut LoggerBackend::Unix(_) => {
+        Ok(())
+      },
+      &mut LoggerBackend::UnixStream(ref mut socket) => {
+        socket.flush()
+      },
+      &mut LoggerBackend::Udp(_, _)  => {
+        Ok(())
+      },
+      &mut LoggerBackend::Tcp(ref mut socket)        => {
+        socket.flush()
+      }
+    }
   }
 }
 
