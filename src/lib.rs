@@ -66,9 +66,6 @@ use format::{LogFormat,Formatter3164};
 
 pub type Priority = u8;
 
-/// RFC 5424 structured data
-pub type StructuredData = HashMap<String, HashMap<String, String>>;
-
 /// Main logging structure
 pub struct Logger<Backend: Write, T, Formatter: LogFormat<T>> {
   formatter: Formatter,
@@ -361,26 +358,6 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
     }))
   }).chain_err(|| ErrorKind::Initialization)
 }
-
-/*
-#[allow(unused_variables,unused_must_use)]
-impl Log for Logger {
-  fn enabled(&self, metadata: &LogMetadata) -> bool {
-    true
-  }
-
-  fn log(&self, record: &LogRecord) {
-    let message = &(format!("{}", record.args()));
-    match record.level() {
-      LogLevel::Error => self.err(message),
-      LogLevel::Warn  => self.warning(message),
-      LogLevel::Info  => self.info(message),
-      LogLevel::Debug => self.debug(message),
-      LogLevel::Trace => self.debug(message)
-    };
-  }
-}
-*/
 
 fn get_process_info() -> Result<(String,i32)> {
   env::current_exe().chain_err(|| ErrorKind::Initialization).and_then(|path| {

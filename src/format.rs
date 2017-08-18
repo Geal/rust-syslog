@@ -20,14 +20,6 @@ pub enum Severity {
   LOG_DEBUG
 }
 
-pub struct Logger<Backend: Write> {
-  facility: Facility,
-  hostname: Option<String>,
-  process:  String,
-  pid:      i32,
-  s:        Backend
-}
-
 pub trait LogFormat<T> {
   fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T)   -> Result<()>;
 
@@ -131,7 +123,6 @@ impl<T: Display> LogFormat<(i32, StructuredData, T)> for Formatter5424 {
       self.format_5424_structured_data(data), message).chain_err(|| ErrorKind::Format)
   }
 }
-
 
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
   return facility as u8 | severity as u8
