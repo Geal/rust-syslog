@@ -36,10 +36,10 @@ extern crate log;
 
 use std::io::{self, Write};
 use std::env;
+use std::marker::PhantomData;
 use std::collections::HashMap;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 use std::path::Path;
-use std::fmt;
 use std::error::Error;
 
 use libc::getpid;
@@ -57,27 +57,17 @@ mod errors {
 }
 
 mod facility;
+mod format;
 pub use facility::Facility;
+pub use format::Severity;
 pub use errors::*;
+
+use format::{LogFormat,Formatter3164};
 
 pub type Priority = u8;
 
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
-
-
-#[allow(non_camel_case_types)]
-#[derive(Copy,Clone)]
-pub enum Severity {
-  LOG_EMERG,
-  LOG_ALERT,
-  LOG_CRIT,
-  LOG_ERR,
-  LOG_WARNING,
-  LOG_NOTICE,
-  LOG_INFO,
-  LOG_DEBUG
-}
 
 pub enum LoggerBackend {
   /// Unix socket, temp file path, log file path
@@ -87,36 +77,15 @@ pub enum LoggerBackend {
   Tcp(TcpStream)
 }
 
-#[derive(Debug)]
-pub struct SyslogError {
-    description: String,
-}
-
-impl Error for SyslogError {
-    fn description(&self) -> &str {
-        &self.description
-    }
-
-    fn cause(&self) -> Option<&Error> { None }
-}
-
-impl fmt::Display for SyslogError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.description)
-    }
-}
-
 /// Main logging structure
-pub struct Logger<Backend: Write> {
-  facility: Facility,
-  hostname: Option<String>,
-  process:  String,
-  pid:      i32,
-  s:        Backend
+pub struct Logger<Backend: Write, T, Formatter: LogFormat<T>> {
+  formatter: Formatter,
+  backend:   Backend,
+  phantom:   PhantomData<T>,
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix(facility: Facility) -> Result<Logger<LoggerBackend>> {
+pub fn unix<'a>(facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
     unix_custom(facility, "/dev/log").or_else(|e| {
       if let &ErrorKind::Io(ref io_err) = e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
@@ -128,62 +97,73 @@ pub fn unix(facility: Facility) -> Result<Logger<LoggerBackend>> {
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger<LoggerBackend>> {
+pub fn unix_custom<'a, P: AsRef<Path>>(facility: Facility, path: P) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
     let (process_name, pid) = get_process_info()?;
     let sock = UnixDatagram::unbound().chain_err(|| ErrorKind::Initialization)?;
     match sock.connect(&path) {
         Ok(()) => {
             Ok(Logger {
-                facility: facility.clone(),
-                hostname: None,
-                process:  process_name,
-                pid:      pid,
-                s:        LoggerBackend::Unix(sock),
+              formatter: Formatter3164 {
+                             facility: facility.clone(),
+                             hostname: None,
+                             process:  process_name,
+                             pid:      pid,
+                },
+                backend:   LoggerBackend::Unix(sock),
+                phantom:   PhantomData,
             })
         },
         Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
             let sock = UnixStream::connect(path).chain_err(|| ErrorKind::Initialization)?;
             Ok(Logger {
-                facility: facility.clone(),
-                hostname: None,
-                process:  process_name,
-                pid:      pid,
-                s:        LoggerBackend::UnixStream(sock),
+                formatter: Formatter3164 {
+                             facility: facility.clone(),
+                             hostname: None,
+                             process:  process_name,
+                             pid:      pid,
+                },
+                backend:   LoggerBackend::UnixStream(sock),
+                phantom:   PhantomData,
             })
         },
         Err(e) => Err(e).chain_err(|| ErrorKind::Initialization),
     }
 }
-
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger<LoggerBackend>> {
+pub fn udp<'a, T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility) -> Result<Logger<LoggerBackend, &'a str, Formatter3164>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
     server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
     UdpSocket::bind(local).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
       let (process_name, pid) = get_process_info()?;
       Ok(Logger {
-        facility: facility.clone(),
-        hostname: Some(hostname),
-        process:  process_name,
-        pid:      pid,
-        s:        LoggerBackend::Udp(socket, server_addr)
+        formatter: Formatter3164 {
+                     facility: facility.clone(),
+                     hostname: Some(hostname),
+                     process:  process_name,
+                     pid:      pid,
+                   },
+        backend:   LoggerBackend::Udp(socket, server_addr),
+        phantom:   PhantomData,
       })
     })
   })
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<TcpStream>> {
+pub fn tcp<'a, T: ToSocketAddrs>(server: T, hostname: String, facility: Facility) -> Result<Logger<TcpStream, &'a str, Formatter3164>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
-      let (process_name, pid) = get_process_info()?;
-      Ok(Logger {
-        facility: facility.clone(),
-        hostname: Some(hostname),
-        process:  process_name,
-        pid:      pid,
-        s:        socket
-      })
+    let (process_name, pid) = get_process_info()?;
+    Ok(Logger {
+      formatter: Formatter3164 {
+                     facility: facility.clone(),
+                     hostname: Some(hostname),
+                     process:  process_name,
+                     pid:      pid,
+                   },
+      backend:        socket,
+      phantom:   PhantomData,
+    })
   })
 }
 
@@ -262,132 +242,37 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
 }
 */
 
-impl<W:Write> Logger<W> {
-  /// format a message as a RFC 3164 log message
-  pub fn format_3164<T: fmt::Display>(&self, severity:Severity, message: T) -> String {
-    if let Some(ref hostname) = self.hostname {
-        format!("<{}>{} {} {}[{}]: {}",
-          self.encode_priority(severity, self.facility),
-          time::now().strftime("%b %d %T").unwrap(),
-          hostname, self.process, self.pid, message)
-    } else {
-        format!("<{}>{} {}[{}]: {}",
-          self.encode_priority(severity, self.facility),
-          time::now().strftime("%b %d %T").unwrap(),
-          self.process, self.pid, message)
-    }
+impl<W:Write, T, F:LogFormat<T>> Logger<W, T, F> {
+  pub fn emerg(&mut self, message: T) -> Result<()> {
+    self.formatter.emerg(&mut self.backend, message)
   }
 
-  /// format RFC 5424 structured data as `([id (name="value")*])*`
-  pub fn format_5424_structured_data(&self, data: StructuredData) -> String {
-    if data.is_empty() {
-      "-".to_string()
-    } else {
-      let mut res = String::new();
-      for (id, params) in data.iter() {
-        res = res + "["+id;
-        for (name,value) in params.iter() {
-          res = res + " " + name + "=\"" + value + "\"";
-        }
-        res = res + "]";
-      }
-
-      res
-    }
+  pub fn alert(&mut self, message: T) -> Result<()> {
+    self.formatter.alert(&mut self.backend, message)
   }
 
-  /// format a message as a RFC 5424 log message
-  pub fn format_5424<T: fmt::Display>(&self, severity:Severity, message_id: i32, data: StructuredData, message: T) -> String {
-    let f =  format!("<{}> {} {} {} {} {} {} {} {}",
-      self.encode_priority(severity, self.facility),
-      1, // version
-      time::now_utc().rfc3339(),
-      self.hostname.as_ref().map(|x| &x[..]).unwrap_or("localhost"),
-      self.process, self.pid, message_id,
-      self.format_5424_structured_data(data), message);
-    return f;
+  pub fn crit(&mut self, message: T) -> Result<()> {
+    self.formatter.crit(&mut self.backend, message)
   }
 
-  fn encode_priority(&self, severity: Severity, facility: Facility) -> Priority {
-    return facility as u8 | severity as u8
+  pub fn err(&mut self, message: T) -> Result<()> {
+    self.formatter.err(&mut self.backend, message)
   }
 
-  /// Sends a basic log message of the format `<priority> message`
-  pub fn send<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize> {
-    let formatted =  format!("<{}> {}",
-      self.encode_priority(severity, self.facility.clone()),
-      message).into_bytes();
-    self.send_raw(&formatted[..])
+  pub fn warning(&mut self, message: T) -> Result<()> {
+    self.formatter.warning(&mut self.backend, message)
   }
 
-  /// Sends a RFC 3164 log message
-  pub fn send_3164<T: fmt::Display>(&mut self, severity: Severity, message: T) -> Result<usize> {
-    let formatted = self.format_3164(severity, message).into_bytes();
-    self.send_raw(&formatted[..])
+  pub fn notice(&mut self, message: T) -> Result<()> {
+    self.formatter.notice(&mut self.backend, message)
   }
 
-  /// Sends a RFC 5424 log message
-  pub fn send_5424<T: fmt::Display>(&mut self, severity: Severity, message_id: i32, data: StructuredData, message: T) -> Result<usize> {
-    let formatted = self.format_5424(severity, message_id, data, message).into_bytes();
-    self.send_raw(&formatted[..])
+  pub fn info(&mut self, message: T) -> Result<()> {
+    self.formatter.info(&mut self.backend, message)
   }
 
-  /// Sends a message directly, without any formatting
-  pub fn send_raw(&mut self, message: &[u8]) -> Result<usize> {
-    self.s.write(message).chain_err(|| ErrorKind::Write)
-  }
-
-  pub fn emerg<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_EMERG, message)
-  }
-
-  pub fn alert<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_ALERT, message)
-  }
-
-  pub fn crit<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_CRIT, message)
-  }
-
-  pub fn err<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_ERR, message)
-  }
-
-  pub fn warning<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_WARNING, message)
-  }
-
-  pub fn notice<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_NOTICE, message)
-  }
-
-  pub fn info<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_INFO, message)
-  }
-
-  pub fn debug<T: fmt::Display>(&mut self, message: T) -> Result<usize> {
-    self.send_3164(Severity::LOG_DEBUG, message)
-  }
-
-  pub fn process_name(&self) -> &String {
-    &self.process
-  }
-
-  pub fn process_id(&self) -> i32 {
-    self.pid
-  }
-
-  pub fn set_process_name(&mut self, name: String) {
-    self.process = name
-  }
-
-  pub fn set_process_id(&mut self, id: i32) {
-    self.pid = id
-  }
-
-  /// Changes facility
-  pub fn set_facility(&mut self, facility: Facility) {
-    self.facility = facility;
+  pub fn debug(&mut self, message: T) -> Result<()> {
+    self.formatter.debug(&mut self.backend, message)
   }
 }
 
