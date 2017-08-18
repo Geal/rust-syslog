@@ -328,7 +328,8 @@ impl Logger {
       LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
       LoggerBackend::UnixStream(ref socket_wrap) => {
         let mut socket = socket_wrap.lock().unwrap();
-        socket.write(&message[..])
+        let null = [0 ; 1];
+        socket.write(&message[..]).and_then(|_| socket.write(&null))
       },
       LoggerBackend::Udp(ref socket, ref addr)    => socket.send_to(&message[..], addr),
       LoggerBackend::Tcp(ref socket_wrap)         => {
