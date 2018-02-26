@@ -12,18 +12,22 @@
 //! ```
 //! extern crate syslog;
 //!
-//! use syslog::{Facility,Severity};
+//! use syslog::{Facility, Formatter3164};
 //!
 //! fn main() {
-//!   match syslog::unix(Facility::LOG_USER) {
-//!     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
-//!     Ok(writer) => {
-//!       let r = writer.send(Severity::LOG_ALERT, "hello world");
-//!       if r.is_err() {
-//!         println!("error sending the log {}", r.err().expect("got error"));
-//!       }
+//!     let formatter = Formatter3164 {
+//!         facility: Facility::LOG_USER,
+//!         hostname: None,
+//!         process: "myprogram".into(),
+//!         pid: 0,
+//!     };
+//!
+//!     match syslog::unix(formatter) {
+//!         Err(e) => println!("impossible to connect to syslog: {:?}", e),
+//!         Ok(mut writer) => {
+//!             writer.err("hello world").expect("could not write error message");
+//!         }
 //!     }
-//!   }
 //! }
 //! ```
 #![crate_type = "lib"]
@@ -44,7 +48,7 @@ use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 
 use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
-use log::{Log,LogRecord,LogMetadata,LogLevel};
+use log::{Log, Metadata, Record, Level};
 
 mod errors {
  error_chain! {
@@ -62,7 +66,8 @@ pub use facility::Facility;
 pub use format::Severity;
 pub use errors::*;
 
-use format::{LogFormat,Formatter3164};
+use format::{LogFormat};
+pub use format::{Formatter3164, Formatter5424};
 
 pub type Priority = u8;
 
@@ -227,26 +232,30 @@ impl BasicLogger {
 
 #[allow(unused_variables,unused_must_use)]
 impl Log for BasicLogger {
-  fn enabled(&self, metadata: &LogMetadata) -> bool {
+  fn enabled(&self, metadata: &Metadata) -> bool {
     true
   }
 
-  fn log(&self, record: &LogRecord) {
+  fn log(&self, record: &Record) {
     //FIXME: temporary patch to compile
     let message = format!("{}", record.args());
     let mut logger = self.logger.lock().unwrap();
     match record.level() {
-      LogLevel::Error => logger.err(message),
-      LogLevel::Warn  => logger.warning(message),
-      LogLevel::Info  => logger.info(message),
-      LogLevel::Debug => logger.debug(message),
-      LogLevel::Trace => logger.debug(message)
+      Level::Error => logger.err(message),
+      Level::Warn  => logger.warning(message),
+      Level::Info  => logger.info(message),
+      Level::Debug => logger.debug(message),
+      Level::Trace => logger.debug(message)
     };
+  }
+
+  fn flush(&self) {
+      let _ = self.logger.lock().unwrap().backend.flush();
   }
 }
 
 /// Unix socket Logger init function compatible with log crate
-pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -255,15 +264,16 @@ pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(
     pid:      pid,
   };
   unix(formatter).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
-  })
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger))
+    ).chain_err(|| ErrorKind::Initialization)
+  })?;
+
+    log::set_max_level(log_level);
+    Ok(())
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
-pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<()> {
+pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LevelFilter, path: P) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -272,15 +282,16 @@ pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogL
     pid:      pid,
   };
   unix_custom(formatter, path).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
-  })
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+    .chain_err(|| ErrorKind::Initialization)
+  })?;
+
+    log::set_max_level(log_level);
+    Ok(())
 }
 
 /// UDP Logger init function compatible with log crate
-pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -289,15 +300,15 @@ pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility
     pid:      pid,
   };
   udp(formatter, local, server).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
-  })
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger))).chain_err(|| ErrorKind::Initialization)
+  })?;
+
+  log::set_max_level(log_level);
+  Ok(())
 }
 
 /// TCP Logger init function compatible with log crate
-pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -305,12 +316,13 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
     process:  process_name,
     pid:      pid,
   };
+
   tcp(formatter, server).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
-  })
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger))).chain_err(|| ErrorKind::Initialization)
+  })?;
+
+  log::set_max_level(log_level);
+  Ok(())
 }
 
 /// Initializes logging subsystem for log crate
@@ -325,7 +337,7 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
 /// this method doesn't return error even if there is no syslog.
 ///
 /// If `application_name` is `None` name is derived from executable name
-pub fn init(facility: Facility, log_level: log::LogLevelFilter,
+pub fn init(facility: Facility, log_level: log::LevelFilter,
     application_name: Option<&str>)
     -> Result<()>
 {
@@ -349,14 +361,15 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
         UdpSocket::bind(("127.0.0.1", 0))
         .map(|s| LoggerBackend::Udp(s, udp_addr))
     })?;
-  log::set_logger(|max_level| {
-    max_level.set(log_level);
-    Box::new(BasicLogger::new(Logger {
+  log::set_boxed_logger(    Box::new(BasicLogger::new(Logger {
       formatter: formatter,
       backend:   backend,
       phantom:   PhantomData,
     }))
-  }).chain_err(|| ErrorKind::Initialization)
+  ).chain_err(|| ErrorKind::Initialization)?;
+
+    log::set_max_level(log_level);
+    Ok(())
 }
 
 fn get_process_info() -> Result<(String,i32)> {
@@ -367,42 +380,5 @@ fn get_process_info() -> Result<(String,i32)> {
     let pid = unsafe { getpid() };
     (name, pid)
   })
-}
-
-#[test]
-#[allow(unused_must_use)]
-fn message() {
-  use std::thread;
-  use std::sync::mpsc::channel;
-
-  let r = unix(Facility::LOG_USER);
-  //let r = tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER);
-  if r.is_ok() {
-    let w = r.unwrap();
-    let m:String = w.format_3164(Severity::LOG_ALERT, "hello");
-    println!("test: {}", m);
-    let r = w.send_3164(Severity::LOG_ALERT, "pouet");
-    if r.is_err() {
-      println!("error sending: {}", r.unwrap_err());
-    }
-    //assert_eq!(m, "<9> test hello".to_string());
-
-    let data = Arc::new(w);
-    let (tx, rx) = channel();
-    for i in 0..3 {
-      let shared = data.clone();
-      let tx = tx.clone();
-      thread::spawn(move || {
-        //let mut logger = *shared;
-        let message = &format!("sent from {}", i);
-        shared.send_3164(Severity::LOG_DEBUG, message);
-        tx.send(());
-      });
-    }
-
-    for _ in 0..3 {
-      rx.recv();
-    }
-  }
 }
 
