@@ -50,18 +50,9 @@ use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
 use log::{Log, Metadata, Record, Level};
 
-mod errors {
- error_chain! {
-   errors { Initialization Format Write }
-
-   foreign_links {
-     Io(::std::io::Error) #[doc = "Link to a `std::error::Error` type."];
-   }
- }
-}
-
 mod facility;
 mod format;
+mod errors;
 pub use facility::Facility;
 pub use format::Severity;
 pub use errors::*;
