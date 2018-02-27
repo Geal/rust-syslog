@@ -1,5 +1,5 @@
 use time;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::fmt::Display;
 use std::collections::HashMap;
 
@@ -66,6 +66,8 @@ pub struct Formatter3164 {
 
 impl<T: Display> LogFormat<T> for Formatter3164 {
   fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T)   -> Result<()> {
+    // we require that the entire string is written once
+    let mut w = BufWriter::new(w);
     if let Some(ref hostname) = self.hostname {
         write!(w, "<{}>{} {} {}[{}]: {}",
           encode_priority(severity, self.facility),
