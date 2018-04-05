@@ -1,15 +1,21 @@
 extern crate syslog;
 
-use syslog::{Facility,Severity};
+use syslog::{Facility, Formatter3164};
 
 fn main() {
-  match syslog::unix(Facility::LOG_USER) {
-    Err(e)         => println!("impossible to connect to syslog: {:?}", e),
-    Ok(writer) => {
-      let r = writer.send(Severity::LOG_ALERT, "hello world");
-      if r.is_err() {
-        println!("error sending the log {}", r.err().expect("got error"));
-      }
+    let formatter = Formatter3164 {
+        facility: Facility::LOG_USER,
+        hostname: None,
+        process: "myprogram".into(),
+        pid: 0,
+    };
+
+    match syslog::unix(formatter) {
+        Err(e) => println!("impossible to connect to syslog: {:?}", e),
+        Ok(mut writer) => {
+            writer
+                .err("hello world")
+                .expect("could not write error message");
+        }
     }
-  }
 }
