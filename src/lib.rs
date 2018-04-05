@@ -44,7 +44,7 @@ use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 
 use libc::getpid;
 use unix_socket::{UnixDatagram, UnixStream};
-use log::{Log,LogRecord,LogMetadata,LogLevel};
+use log::{Log, Record, Metadata, Level};
 
 mod errors {
  error_chain! {
@@ -227,26 +227,28 @@ impl BasicLogger {
 
 #[allow(unused_variables,unused_must_use)]
 impl Log for BasicLogger {
-  fn enabled(&self, metadata: &LogMetadata) -> bool {
+  fn enabled(&self, metadata: &Metadata) -> bool {
     true
   }
 
-  fn log(&self, record: &LogRecord) {
+  fn log(&self, record: &Record) {
     //FIXME: temporary patch to compile
     let message = format!("{}", record.args());
     let mut logger = self.logger.lock().unwrap();
     match record.level() {
-      LogLevel::Error => logger.err(message),
-      LogLevel::Warn  => logger.warning(message),
-      LogLevel::Info  => logger.info(message),
-      LogLevel::Debug => logger.debug(message),
-      LogLevel::Trace => logger.debug(message)
+      Level::Error => logger.err(message),
+      Level::Warn  => logger.warning(message),
+      Level::Info  => logger.info(message),
+      Level::Debug => logger.debug(message),
+      Level::Trace => logger.debug(message)
     };
   }
+
+  fn flush(&self) {}
 }
 
 /// Unix socket Logger init function compatible with log crate
-pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -255,15 +257,14 @@ pub fn init_unix(facility: Facility, log_level: log::LogLevelFilter) -> Result<(
     pid:      pid,
   };
   unix(formatter).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
+    log::set_max_level(log_level);
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+        .chain_err(|| ErrorKind::Initialization)
   })
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
-pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogLevelFilter, path: P) -> Result<()> {
+pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LevelFilter, path: P) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -272,15 +273,14 @@ pub fn init_unix_custom<P: AsRef<Path>>(facility: Facility, log_level: log::LogL
     pid:      pid,
   };
   unix_custom(formatter, path).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
+    log::set_max_level(log_level);
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+        .chain_err(|| ErrorKind::Initialization)
   })
 }
 
 /// UDP Logger init function compatible with log crate
-pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -289,15 +289,14 @@ pub fn init_udp<T: ToSocketAddrs>(local: T, server: T, hostname:String, facility
     pid:      pid,
   };
   udp(formatter, local, server).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
+    log::set_max_level(log_level);
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+        .chain_err(|| ErrorKind::Initialization)
   })
 }
 
 /// TCP Logger init function compatible with log crate
-pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LogLevelFilter) -> Result<()> {
+pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facility, log_level: log::LevelFilter) -> Result<()> {
   let (process_name, pid) = get_process_info()?;
   let formatter = Formatter3164 {
     facility: facility.clone(),
@@ -306,10 +305,9 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
     pid:      pid,
   };
   tcp(formatter, server).and_then(|logger| {
-    log::set_logger(|max_level| {
-      max_level.set(log_level);
-      Box::new(BasicLogger::new(logger))
-    }).chain_err(|| ErrorKind::Initialization)
+    log::set_max_level(log_level);
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+        .chain_err(|| ErrorKind::Initialization)
   })
 }
 
@@ -325,7 +323,7 @@ pub fn init_tcp<T: ToSocketAddrs>(server: T, hostname: String, facility: Facilit
 /// this method doesn't return error even if there is no syslog.
 ///
 /// If `application_name` is `None` name is derived from executable name
-pub fn init(facility: Facility, log_level: log::LogLevelFilter,
+pub fn init(facility: Facility, log_level: log::LevelFilter,
     application_name: Option<&str>)
     -> Result<()>
 {
@@ -349,14 +347,13 @@ pub fn init(facility: Facility, log_level: log::LogLevelFilter,
         UdpSocket::bind(("127.0.0.1", 0))
         .map(|s| LoggerBackend::Udp(s, udp_addr))
     })?;
-  log::set_logger(|max_level| {
-    max_level.set(log_level);
-    Box::new(BasicLogger::new(Logger {
+  log::set_max_level(log_level);
+  log::set_boxed_logger(Box::new(BasicLogger::new(Logger {
       formatter: formatter,
       backend:   backend,
       phantom:   PhantomData,
     }))
-  }).chain_err(|| ErrorKind::Initialization)
+  ).chain_err(|| ErrorKind::Initialization)
 }
 
 fn get_process_info() -> Result<(String,i32)> {
