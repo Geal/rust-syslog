@@ -12,13 +12,21 @@
 //! ```
 //! extern crate syslog;
 //!
-//! use syslog::{Facility,Severity};
+//! use syslog::{Facility,Formatter3164};
 //!
 //! fn main() {
-//!   match syslog::unix(Facility::LOG_USER) {
+//!
+//!  let formatter = Formatter3164 {
+//!    facility: Facility::LOG_USER,
+//!    hostname: None,
+//!    process:  "process".to_string(),
+//!    pid:      1234,
+//!  };
+//!
+//!   match syslog::unix(formatter) {
 //!     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
-//!     Ok(writer) => {
-//!       let r = writer.send(Severity::LOG_ALERT, "hello world");
+//!     Ok(mut logger) => {
+//!       let r = logger.alert("hello world");
 //!       if r.is_err() {
 //!         println!("error sending the log {}", r.err().expect("got error"));
 //!       }
@@ -59,10 +67,10 @@ mod errors {
 mod facility;
 mod format;
 pub use facility::Facility;
-pub use format::Severity;
+pub use format::{Severity,Formatter3164,Formatter5424};
 pub use errors::*;
 
-use format::{LogFormat,Formatter3164};
+use format::LogFormat;
 
 pub type Priority = u8;
 
@@ -156,12 +164,12 @@ impl Write for LoggerBackend {
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 pub fn unix<U: Display, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
     unix_custom(formatter.clone(), "/dev/log").or_else(|e| {
-      if let &ErrorKind::Io(ref io_err) = e.kind() {
-        if io_err.kind() == io::ErrorKind::NotFound {
-          return unix_custom(formatter, "/var/run/syslog");
+      match e {
+        Error(ErrorKind::Initialization, _) => {
+          unix_custom(formatter, "/var/run/syslog")
         }
+        _ => Err(e)
       }
-      Err(e)
     })
 }
 
@@ -375,34 +383,31 @@ fn message() {
   use std::thread;
   use std::sync::mpsc::channel;
 
-  let r = unix(Facility::LOG_USER);
-  //let r = tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER);
-  if r.is_ok() {
-    let w = r.unwrap();
-    let m:String = w.format_3164(Severity::LOG_ALERT, "hello");
-    println!("test: {}", m);
-    let r = w.send_3164(Severity::LOG_ALERT, "pouet");
-    if r.is_err() {
-      println!("error sending: {}", r.unwrap_err());
-    }
-    //assert_eq!(m, "<9> test hello".to_string());
+  let (name, pid) = get_process_info().unwrap();
 
-    let data = Arc::new(w);
-    let (tx, rx) = channel();
-    for i in 0..3 {
-      let shared = data.clone();
-      let tx = tx.clone();
-      thread::spawn(move || {
-        //let mut logger = *shared;
-        let message = &format!("sent from {}", i);
-        shared.send_3164(Severity::LOG_DEBUG, message);
-        tx.send(());
-      });
-    }
+  let formatter = Formatter3164 {
+    facility: Facility::LOG_USER,
+    hostname: None,
+    process:  name,
+    pid:      pid,
+  };
 
-    for _ in 0..3 {
-      rx.recv();
-    }
+  let mut logger = unix(formatter).unwrap();
+  logger.alert("hello").unwrap();
+
+  let logger = Arc::new(Mutex::new(logger));
+  let (tx, rx) = channel();
+  for _ in 0..3 {
+    let mut logger = logger.clone();
+    let tx = tx.clone();
+    thread::spawn(move || {
+      logger.lock().unwrap().alert("hello").unwrap();
+      tx.send(());
+    });
+  }
+
+  for _ in 0..3 {
+    rx.recv();
   }
 }
 
