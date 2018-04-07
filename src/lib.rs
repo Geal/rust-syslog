@@ -41,7 +41,7 @@ extern crate log;
 use std::env;
 use std::path::Path;
 use std::fmt::Display;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
@@ -106,9 +106,9 @@ impl<W:Write, T, F:LogFormat<T>> Logger<W, T, F> {
 pub enum LoggerBackend {
   /// Unix socket, temp file path, log file path
   Unix(UnixDatagram),
-  UnixStream(UnixStream),
+  UnixStream(BufWriter<UnixStream>),
   Udp(UdpSocket, SocketAddr),
-  Tcp(TcpStream)
+  Tcp(BufWriter<TcpStream>)
 }
 
 impl Write for LoggerBackend {
@@ -120,7 +120,9 @@ impl Write for LoggerBackend {
       },
       &mut LoggerBackend::UnixStream(ref mut socket) => {
         let null = [0 ; 1];
-        socket.write(&message[..]).and_then(|_| socket.write(&null))
+        socket.write(&message[..]).and_then(|sz| {
+          socket.write(&null).map(|sz2| sz + sz2)
+        })
       },
       &mut LoggerBackend::Udp(ref socket, ref addr)    => {
         socket.send_to(&message[..], addr)
@@ -182,7 +184,7 @@ fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path:
         let sock = UnixStream::connect(path)?;
         Ok(Logger {
             formatter: formatter,
-            backend:   LoggerBackend::UnixStream(sock),
+            backend:   LoggerBackend::UnixStream(BufWriter::new(sock)),
             phantom:   PhantomData,
         })
     },
@@ -210,7 +212,7 @@ pub fn tcp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, server: 
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
     Ok(Logger {
       formatter: formatter,
-      backend:   LoggerBackend::Tcp(socket),
+      backend:   LoggerBackend::Tcp(BufWriter::new(socket)),
       phantom:   PhantomData,
     })
   })
@@ -352,7 +354,7 @@ pub fn init(facility: Facility, log_level: log::LevelFilter,
   let backend = unix(formatter.clone()).map(|logger: Logger<LoggerBackend, String, Formatter3164>| logger.backend)
     .or_else(|_| {
         TcpStream::connect(("127.0.0.1", 601))
-        .map(|s| LoggerBackend::Tcp(s))
+        .map(|s| LoggerBackend::Tcp(BufWriter::new(s)))
     })
     .or_else(|_| {
         let udp_addr = "127.0.0.1:514".parse().unwrap();
