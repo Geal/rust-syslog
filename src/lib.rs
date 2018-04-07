@@ -121,7 +121,7 @@ impl Write for LoggerBackend {
       &mut LoggerBackend::UnixStream(ref mut socket) => {
         let null = [0 ; 1];
         socket.write(&message[..]).and_then(|sz| {
-          socket.write(&null).map(|sz2| sz + sz2)
+          socket.write(&null).map(|_| sz)
         })
       },
       &mut LoggerBackend::Udp(ref socket, ref addr)    => {
