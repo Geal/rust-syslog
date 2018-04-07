@@ -151,38 +151,45 @@ impl Write for LoggerBackend {
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 pub fn unix<U: Display, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
-    unix_custom(formatter.clone(), "/dev/log").or_else(|e| {
+    unix_connect(formatter.clone(), "/dev/log").or_else(|e| {
       if let &ErrorKind::Io(ref io_err) = e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
-          return unix_custom(formatter, "/var/run/syslog");
+          return unix_connect(formatter, "/var/run/syslog");
         }
       }
       Err(e)
-    })
+    }).chain_err(|| ErrorKind::Initialization)
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
 pub fn unix_custom<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
-    let sock = UnixDatagram::unbound().chain_err(|| ErrorKind::Initialization)?;
-    match sock.connect(&path) {
-        Ok(()) => {
-            Ok(Logger {
-              formatter: formatter,
-              backend:   LoggerBackend::Unix(sock),
-              phantom:   PhantomData,
-            })
-        },
-        Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
-            let sock = UnixStream::connect(path).chain_err(|| ErrorKind::Initialization)?;
-            Ok(Logger {
-                formatter: formatter,
-                backend:   LoggerBackend::UnixStream(sock),
-                phantom:   PhantomData,
-            })
-        },
-        Err(e) => Err(e).chain_err(|| ErrorKind::Initialization),
-    }
+  unix_connect(formatter, path).chain_err(|| ErrorKind::Initialization)
 }
+
+fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
+  let sock = UnixDatagram::unbound()?;
+  match sock.connect(&path) {
+    Ok(()) => {
+        println!("ok");
+        Ok(Logger {
+          formatter: formatter,
+          backend:   LoggerBackend::Unix(sock),
+          phantom:   PhantomData,
+        })
+    },
+    Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
+        println!("testing stream");
+        let sock = UnixStream::connect(path)?;
+        Ok(Logger {
+            formatter: formatter,
+            backend:   LoggerBackend::UnixStream(sock),
+            phantom:   PhantomData,
+        })
+    },
+    Err(e) => Err(e.into()),
+  }
+}
+
 /// returns a UDP logger connecting `local` and `server`
 pub fn udp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, U, F>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
