@@ -40,7 +40,7 @@ extern crate log;
 
 use std::env;
 use std::path::Path;
-use std::fmt::Display;
+use std::fmt::{self,Arguments,Display};
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
@@ -129,6 +129,28 @@ impl Write for LoggerBackend {
       },
       &mut LoggerBackend::Tcp(ref mut socket)         => {
         socket.write(&message[..])
+      }
+    }
+  }
+
+  fn write_fmt(&mut self, args: Arguments) -> io::Result<()>  {
+    match self {
+      &mut LoggerBackend::Unix(ref dgram) => {
+        let message = fmt::format(args);
+        dgram.send(message.as_bytes()).map(|_| ())
+      },
+      &mut LoggerBackend::UnixStream(ref mut socket) => {
+        let null = [0 ; 1];
+        socket.write_fmt(args).and_then(|_| {
+          socket.write(&null).map(|_| ())
+        })
+      },
+      &mut LoggerBackend::Udp(ref socket, ref addr)    => {
+        let message = fmt::format(args);
+        socket.send_to(message.as_bytes(), addr).map(|_| ())
+      },
+      &mut LoggerBackend::Tcp(ref mut socket)         => {
+        socket.write_fmt(args)
       }
     }
   }
