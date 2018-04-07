@@ -11,28 +11,32 @@ syslog is available on [crates.io](https://crates.io/crates/syslog) and can be i
 
 ```toml
 [dependencies]
-syslog = "~3.3.0"
+syslog = "^4.0"
 ```
 
 ## documentation
 
-Reference documentation is available [here](http://rust.unhandledexpression.com/syslog/).
+Reference documentation is available [here](https://docs.rs/syslog).
 
 ## Example
 
 ```rust
 extern crate syslog;
 
-use syslog::{Facility,Severity};
+use syslog::{Facility, Formatter3164};
 
 fn main() {
-  match syslog::unix(Facility::LOG_USER) {
+  let formatter = Formatter3164 {
+    facility: Facility::LOG_USER,
+    hostname: None,
+    process: "myprogram".into(),
+    pid: 42,
+  };
+
+  match syslog::unix(formatter) {
     Err(e)         => println!("impossible to connect to syslog: {:?}", e),
-    Ok(writer) => {
-      let r = writer.send_3164(Severity::LOG_ALERT, "hello world");
-      if r.is_err() {
-        println!("error sending the log {}", r.err().expect("got error"));
-      }
+    Ok(mut writer) => {
+      writer.err("hello world").expect("could not write error message");
     }
   }
 }
@@ -42,6 +46,6 @@ The struct `syslog::Logger` implements `Log` from the `log` crate, so it can be 
 
 There are 3 functions to create loggers:
 
-* the `unix` function sends to the local syslog through a Unix socket: `syslog::unix(Facility::LOG_USER)`
-* the `tcp` function takes an address for a remote TCP syslog server and a hostname: `tcp("127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER)`
-* the `udp` function takes an address for a local port, and the address remote UDP syslog server and a hostname: `udp("127.0.0.1:1234", "127.0.0.1:4242", "localhost".to_string(), Facility::LOG_USER)`
+* the `unix` function sends to the local syslog through a Unix socket: `syslog::unix(formatter)`
+* the `tcp` function takes an address for a remote TCP syslog server: `tcp(formatter, "127.0.0.1:4242")`
+* the `udp` function takes an address for a local port, and the address remote UDP syslog server: `udp(formatter, "127.0.0.1:1234", "127.0.0.1:4242")`

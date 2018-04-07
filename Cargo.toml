@@ -1,12 +1,12 @@
 [package]
 
 name = "syslog"
-version = "3.3.0"
+version = "4.0.0"
 authors = [ "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"
 license = "MIT"
 repository = "https://github.com/Geal/rust-syslog"
-documentation = "http://rust.unhandledexpression.com/syslog/"
+documentation = "https://docs.rs/syslog"
 keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
