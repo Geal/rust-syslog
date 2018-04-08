@@ -33,7 +33,6 @@
 #![crate_type = "lib"]
 
 #[macro_use] extern crate error_chain;
-extern crate unix_socket;
 extern crate libc;
 extern crate time;
 extern crate log;
@@ -45,9 +44,9 @@ use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
+use std::os::unix::net::{UnixDatagram, UnixStream};
 
 use libc::getpid;
-use unix_socket::{UnixDatagram, UnixStream};
 use log::{Log, Metadata, Record, Level};
 
 mod facility;
