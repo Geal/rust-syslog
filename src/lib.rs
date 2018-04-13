@@ -194,7 +194,6 @@ fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path:
   let sock = UnixDatagram::unbound()?;
   match sock.connect(&path) {
     Ok(()) => {
-        println!("ok");
         Ok(Logger {
           formatter: formatter,
           backend:   LoggerBackend::Unix(sock),
@@ -202,7 +201,6 @@ fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path:
         })
     },
     Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
-        println!("testing stream");
         let sock = UnixStream::connect(path)?;
         Ok(Logger {
             formatter: formatter,
