@@ -10,7 +10,6 @@ documentation = "https://docs.rs/syslog"
 keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
-unix_socket = "^0.5"
 libc        = "^0.2"
 time        = "^0.1"
 log         = { version =  "^0.4.1", features = [ "std" ] }
