@@ -13,7 +13,8 @@ keywords = ["syslog", "logs", "logging"]
 libc        = "^0.2"
 time        = "^0.1"
 log         = { version =  "^0.4", features = [ "std" ] }
-error-chain = "^0.12"
+error-chain = { version = "^0.12", default-features = false }
 
 [features]
 nightly = []
+backtrace = ["error-chain/backtrace"]
