@@ -93,6 +93,10 @@ pub struct Logger<Backend: Write, Formatter> {
 }
 
 impl<W:Write, F> Logger<W, F> {
+  pub fn new(backend: W, formatter: F) -> Self {
+    Logger { backend, formatter }
+  }
+
   pub fn emerg<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.emerg(&mut self.backend, message)
   }
