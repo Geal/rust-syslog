@@ -42,7 +42,32 @@ fn main() {
 }
 ```
 
-The struct `syslog::Logger` implements `Log` from the `log` crate, so it can be used as backend for other logging systems.
+The struct `syslog::Logger` implements `Log` from the `log` crate, so it can be used as backend for other logging systems:
+
+```rust
+extern crate syslog;
+#[macro_use]
+extern crate log;
+
+use syslog::{Facility, Formatter3164, BasicLogger};
+use log::{SetLoggerError, LevelFilter};
+
+fn main() {
+    let formatter = Formatter3164 {
+        facility: Facility::LOG_USER,
+        hostname: None,
+        process: "myprogram".into(),
+        pid: 0,
+    };
+
+    let logger = syslog::unix(formatter).expect("could not connect to syslog");
+    log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
+            .map(|()| log::set_max_level(LevelFilter::Info));
+
+    info!("hello world");
+}
+
+```
 
 There are 3 functions to create loggers:
 
