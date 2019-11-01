@@ -68,7 +68,6 @@ use std::path::Path;
 use std::fmt::{self,Arguments};
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
-use std::marker::PhantomData;
 use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 #[cfg(unix)]
 use std::os::unix::net::{UnixDatagram, UnixStream};
@@ -89,42 +88,41 @@ pub use format::{Formatter3164, Formatter5424};
 pub type Priority = u8;
 
 /// Main logging structure
-pub struct Logger<Backend: Write, T, Formatter: LogFormat<T>> {
+pub struct Logger<Backend: Write, Formatter> {
   formatter: Formatter,
   backend:   Backend,
-  phantom:   PhantomData<T>,
 }
 
-impl<W:Write, T, F:LogFormat<T>> Logger<W, T, F> {
-  pub fn emerg(&mut self, message: T) -> Result<()> {
+impl<W:Write, F> Logger<W, F> {
+  pub fn emerg<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.emerg(&mut self.backend, message)
   }
 
-  pub fn alert(&mut self, message: T) -> Result<()> {
+  pub fn alert<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.alert(&mut self.backend, message)
   }
 
-  pub fn crit(&mut self, message: T) -> Result<()> {
+  pub fn crit<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.crit(&mut self.backend, message)
   }
 
-  pub fn err(&mut self, message: T) -> Result<()> {
+  pub fn err<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.err(&mut self.backend, message)
   }
 
-  pub fn warning(&mut self, message: T) -> Result<()> {
+  pub fn warning<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.warning(&mut self.backend, message)
   }
 
-  pub fn notice(&mut self, message: T) -> Result<()> {
+  pub fn notice<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.notice(&mut self.backend, message)
   }
 
-  pub fn info(&mut self, message: T) -> Result<()> {
+  pub fn info<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.info(&mut self.backend, message)
   }
 
-  pub fn debug(&mut self, message: T) -> Result<()> {
+  pub fn debug<T>(&mut self, message: T) -> Result<()> where F: LogFormat<T> {
     self.formatter.debug(&mut self.backend, message)
   }
 }
@@ -222,7 +220,7 @@ impl Write for LoggerBackend {
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 #[cfg(unix)]
-pub fn unix<U, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
     unix_connect(formatter.clone(), "/dev/log").or_else(|e| {
       if let ErrorKind::Io(ref io_err) = *e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
@@ -234,30 +232,29 @@ pub fn unix<U, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBacke
 }
 
 #[cfg(not(unix))]
-pub fn unix<U, F: Clone+LogFormat<U>>(_formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix<F: Clone>(_formatter: F) -> Result<Logger<LoggerBackend, F>> {
   Err(ErrorKind::UnsupportedPlatform)?
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
 #[cfg(unix)]
-pub fn unix_custom<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix_custom<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
   unix_connect(formatter, path).chain_err(|| ErrorKind::Initialization)
 }
 
 #[cfg(not(unix))]
-pub fn unix_custom<P: AsRef<Path>, U, F: LogFormat<U>>(_formatter: F, _path: P) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix_custom<P: AsRef<Path>, F>(_formatter: F, _path: P) -> Result<Logger<LoggerBackend, F>> {
   Err(ErrorKind::UnsupportedPlatform)?
 }
 
 #[cfg(unix)]
-fn unix_connect<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
+fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
   let sock = UnixDatagram::unbound()?;
   match sock.connect(&path) {
     Ok(()) => {
         Ok(Logger {
           formatter,
           backend:   LoggerBackend::Unix(sock),
-          phantom:   PhantomData,
         })
     },
     Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
@@ -265,7 +262,6 @@ fn unix_connect<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Re
         Ok(Logger {
             formatter,
             backend:   LoggerBackend::UnixStream(BufWriter::new(sock)),
-            phantom:   PhantomData,
         })
     },
     Err(e) => Err(e.into()),
@@ -273,7 +269,7 @@ fn unix_connect<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Re
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs, U, F: LogFormat<U>>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn udp<T: ToSocketAddrs, F>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, F>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
     server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
@@ -281,29 +277,27 @@ pub fn udp<T: ToSocketAddrs, U, F: LogFormat<U>>(formatter: F, local: T, server:
       Ok(Logger {
         formatter,
         backend:   LoggerBackend::Udp(socket, server_addr),
-        phantom:   PhantomData,
       })
     })
   })
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs, U, F: LogFormat<U>>(formatter: F, server: T) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
     Ok(Logger {
       formatter,
       backend:   LoggerBackend::Tcp(BufWriter::new(socket)),
-      phantom:   PhantomData,
     })
   })
 }
 
 pub struct BasicLogger {
-  logger: Arc<Mutex<Logger<LoggerBackend, String, Formatter3164>>>,
+  logger: Arc<Mutex<Logger<LoggerBackend, Formatter3164>>>,
 }
 
 impl BasicLogger {
-  pub fn new(logger: Logger<LoggerBackend, String, Formatter3164>) -> BasicLogger {
+  pub fn new(logger: Logger<LoggerBackend, Formatter3164>) -> BasicLogger {
     BasicLogger {
       logger: Arc::new(Mutex::new(logger)),
     }
@@ -442,7 +436,7 @@ pub fn init(facility: Facility, log_level: log::LevelFilter,
     pid,
   };
 
-  let backend = unix(formatter.clone()).map(|logger: Logger<LoggerBackend, String, Formatter3164>| logger.backend)
+  let backend = unix(formatter.clone()).map(|logger: Logger<LoggerBackend, Formatter3164>| logger.backend)
     .or_else(|_| {
         TcpStream::connect(("127.0.0.1", 601))
         .map(|s| LoggerBackend::Tcp(BufWriter::new(s)))
@@ -455,7 +449,6 @@ pub fn init(facility: Facility, log_level: log::LevelFilter,
   log::set_boxed_logger(    Box::new(BasicLogger::new(Logger {
       formatter,
       backend,
-      phantom:   PhantomData,
     }))
   ).chain_err(|| ErrorKind::Initialization)?;
 
