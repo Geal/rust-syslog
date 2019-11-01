@@ -39,7 +39,7 @@ extern crate log;
 
 use std::env;
 use std::path::Path;
-use std::fmt::{self,Arguments,Display};
+use std::fmt::{self,Arguments};
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
 use std::marker::PhantomData;
@@ -173,7 +173,7 @@ impl Write for LoggerBackend {
 }
 
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
-pub fn unix<U: Display, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix<U, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<LoggerBackend, U, F>> {
     unix_connect(formatter.clone(), "/dev/log").or_else(|e| {
       if let ErrorKind::Io(ref io_err) = *e.kind() {
         if io_err.kind() == io::ErrorKind::NotFound {
@@ -185,11 +185,11 @@ pub fn unix<U: Display, F: Clone+LogFormat<U>>(formatter: F) -> Result<Logger<Lo
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
-pub fn unix_custom<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn unix_custom<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
   unix_connect(formatter, path).chain_err(|| ErrorKind::Initialization)
 }
 
-fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
+fn unix_connect<P: AsRef<Path>, U, F: LogFormat<U>>(formatter: F, path: P) -> Result<Logger<LoggerBackend, U, F>> {
   let sock = UnixDatagram::unbound()?;
   match sock.connect(&path) {
     Ok(()) => {
@@ -212,7 +212,7 @@ fn unix_connect<P: AsRef<Path>, U: Display, F: LogFormat<U>>(formatter: F, path:
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn udp<T: ToSocketAddrs, U, F: LogFormat<U>>(formatter: F, local: T, server: T) -> Result<Logger<LoggerBackend, U, F>> {
   server.to_socket_addrs().chain_err(|| ErrorKind::Initialization).and_then(|mut server_addr_opt| {
     server_addr_opt.next().chain_err(|| ErrorKind::Initialization)
   }).and_then(|server_addr| {
@@ -227,7 +227,7 @@ pub fn udp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, local: T
 }
 
 /// returns a TCP logger connecting `local` and `server`
-pub fn tcp<T: ToSocketAddrs, U: Display, F: LogFormat<U>>(formatter: F, server: T) -> Result<Logger<LoggerBackend, U, F>> {
+pub fn tcp<T: ToSocketAddrs, U, F: LogFormat<U>>(formatter: F, server: T) -> Result<Logger<LoggerBackend, U, F>> {
   TcpStream::connect(server).chain_err(|| ErrorKind::Initialization).and_then(|socket| {
     Ok(Logger {
       formatter,
