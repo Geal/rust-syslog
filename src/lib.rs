@@ -82,8 +82,7 @@ pub use facility::Facility;
 pub use format::Severity;
 pub use errors::*;
 
-use format::{LogFormat};
-pub use format::{Formatter3164, Formatter5424};
+pub use format::{LogFormat, Formatter3164, Formatter5424};
 
 pub type Priority = u8;
 
