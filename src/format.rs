@@ -171,7 +171,7 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
 
         write!(
             w,
-            "<{}> 1 {} {} {} {} {} {} {}", // v1
+            "<{}>1 {} {} {} {} {} {} {}", // v1
             encode_priority(severity, self.facility),
             time::OffsetDateTime::now_utc()
                 .format(&time::format_description::well_known::Rfc3339)
