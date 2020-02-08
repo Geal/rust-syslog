@@ -114,7 +114,7 @@ impl<T: Display> LogFormat<(i32, StructuredData, T)> for Formatter5424 {
   fn format<W: Write>(&self, w: &mut W, severity: Severity, log_message: (i32, StructuredData, T))   -> Result<()> {
     let (message_id, data, message) = log_message;
 
-    write!(w, "<{}> {} {} {} {} {} {} {} {}",
+    write!(w, "<{}>{} {} {} {} {} {} {} {}",
       encode_priority(severity, self.facility),
       1, // version
       time::now_utc().rfc3339(),
