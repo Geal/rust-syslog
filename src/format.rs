@@ -61,7 +61,7 @@ pub struct Formatter3164 {
   pub facility: Facility,
   pub hostname: Option<String>,
   pub process:  String,
-  pub pid:      i32,
+  pub pid:      u32,
 }
 
 impl<T: Display> LogFormat<T> for Formatter3164 {
@@ -88,7 +88,7 @@ pub struct Formatter5424 {
   pub facility: Facility,
   pub hostname: Option<String>,
   pub process:  String,
-  pub pid:      i32,
+  pub pid:      u32,
 }
 
 impl Formatter5424 {
@@ -110,8 +110,8 @@ impl Formatter5424 {
   }
 }
 
-impl<T: Display> LogFormat<(i32, StructuredData, T)> for Formatter5424 {
-  fn format<W: Write>(&self, w: &mut W, severity: Severity, log_message: (i32, StructuredData, T))   -> Result<()> {
+impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
+  fn format<W: Write>(&self, w: &mut W, severity: Severity, log_message: (u32, StructuredData, T))   -> Result<()> {
     let (message_id, data, message) = log_message;
 
     write!(w, "<{}> {} {} {} {} {} {} {} {}",

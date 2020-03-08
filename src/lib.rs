@@ -65,6 +65,7 @@ extern crate log;
 
 use std::env;
 use std::path::Path;
+use std::process;
 use std::fmt::{self,Arguments};
 use std::io::{self, BufWriter, Write};
 use std::sync::{Arc,Mutex};
@@ -72,7 +73,6 @@ use std::net::{SocketAddr,ToSocketAddrs,UdpSocket,TcpStream};
 #[cfg(unix)]
 use std::os::unix::net::{UnixDatagram, UnixStream};
 
-use libc::getpid;
 use log::{Log, Metadata, Record, Level};
 
 mod facility;
@@ -459,13 +459,10 @@ pub fn init(facility: Facility, log_level: log::LevelFilter,
     Ok(())
 }
 
-fn get_process_info() -> Result<(String,i32)> {
+fn get_process_info() -> Result<(String,u32)> {
   env::current_exe().chain_err(|| ErrorKind::Initialization).and_then(|path| {
     path.file_name().and_then(|os_name| os_name.to_str()).map(|name| name.to_string())
       .chain_err(|| ErrorKind::Initialization)
-  }).map(|name| {
-    let pid = unsafe { getpid() };
-    (name, pid)
-  })
+  }).map(|name| (name, process::id()))
 }
 
