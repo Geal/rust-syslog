@@ -13,8 +13,12 @@ fn main() {
     match syslog::unix(formatter) {
         Err(e) => println!("impossible to connect to syslog: {:?}", e),
         Ok(mut writer) => {
-            writer.err("hello world").expect("could not write error message");
-            writer.err("hello all".to_string()).expect("could not write error message");
+            writer
+                .err("hello world")
+                .expect("could not write error message");
+            writer
+                .err("hello all".to_string())
+                .expect("could not write error message");
         }
     }
 }
