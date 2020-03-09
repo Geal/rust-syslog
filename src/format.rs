@@ -1,4 +1,4 @@
-use time;
+use chrono::offset::{Local, Utc};
 use std::io::Write;
 use std::fmt::Display;
 use std::collections::HashMap;
@@ -69,12 +69,12 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
     if let Some(ref hostname) = self.hostname {
         write!(w, "<{}>{} {} {}[{}]: {}",
           encode_priority(severity, self.facility),
-          time::now().strftime("%b %d %T").unwrap(),
+          Local::now().format("%b %d %T"),
           hostname, self.process, self.pid, message).chain_err(|| ErrorKind::Format)
     } else {
         write!(w, "<{}>{} {}[{}]: {}",
           encode_priority(severity, self.facility),
-          time::now().strftime("%b %d %T").unwrap(),
+          Local::now().format("%b %d %T"),
           self.process, self.pid, message).chain_err(|| ErrorKind::Format)
     }
   }
@@ -117,7 +117,7 @@ impl<T: Display> LogFormat<(i32, StructuredData, T)> for Formatter5424 {
     write!(w, "<{}> {} {} {} {} {} {} {} {}",
       encode_priority(severity, self.facility),
       1, // version
-      time::now_utc().rfc3339(),
+      Utc::now().to_rfc3339(),
       self.hostname.as_ref().map(|x| &x[..]).unwrap_or("localhost"),
       self.process, self.pid, message_id,
       self.format_5424_structured_data(data), message).chain_err(|| ErrorKind::Format)

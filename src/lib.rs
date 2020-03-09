@@ -58,9 +58,9 @@
 //!
 #![crate_type = "lib"]
 
+extern crate chrono;
 #[macro_use] extern crate error_chain;
 extern crate libc;
-extern crate time;
 extern crate log;
 
 use std::env;
