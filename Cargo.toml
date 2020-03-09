@@ -1,5 +1,4 @@
 [package]
-
 name = "syslog"
 version = "5.0.0"
 authors = [ "contact@geoffroycouprie.com" ]
@@ -10,8 +9,8 @@ documentation = "https://docs.rs/syslog"
 keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
+chrono      = "^0.4"
 libc        = "^0.2"
-time        = "^0.1"
 log         = { version =  "^0.4", features = [ "std" ] }
 error-chain = { version = "^0.12", default-features = false }
 
