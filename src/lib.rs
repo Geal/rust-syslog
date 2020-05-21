@@ -434,7 +434,7 @@ pub fn init(facility: Facility, log_level: log::LevelFilter,
   let process = application_name.map(From::from).unwrap_or(process_name);
   let formatter = Formatter3164 {
     facility,
-    hostname: None,
+    hostname: get_hostname().ok(),
     process,
     pid,
   };
@@ -469,3 +469,6 @@ fn get_process_info() -> Result<(String,i32)> {
   })
 }
 
+fn get_hostname() -> Result<String> {
+  Ok(hostname::get()?.to_string_lossy().to_string())
+}
