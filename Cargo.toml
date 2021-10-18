@@ -11,7 +11,7 @@ keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
 libc        = "^0.2"
-time        = "^0.1"
+time        = { version = "^0.3", features = ["local-offset", "formatting"] }
 log         = { version =  "^0.4", features = [ "std" ] }
 error-chain = { version = "^0.12", default-features = false }
 
