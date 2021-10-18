@@ -68,12 +68,18 @@ pub struct Formatter3164 {
 
 impl<T: Display> LogFormat<T> for Formatter3164 {
     fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()> {
+        let format =
+            time::format_description::parse("[month repr:short] [day] [hour]:[minute]:[second]")
+                .unwrap();
+
         if let Some(ref hostname) = self.hostname {
             write!(
                 w,
                 "<{}>{} {} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::now().strftime("%b %d %T").unwrap(),
+                time::OffsetDateTime::now_local()
+                    .map(|timestamp| timestamp.format(&format).unwrap())
+                    .unwrap(),
                 hostname,
                 self.process,
                 self.pid,
@@ -85,7 +91,9 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 w,
                 "<{}>{} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::now().strftime("%b %d %T").unwrap(),
+                time::OffsetDateTime::now_local()
+                    .map(|timestamp| timestamp.format(&format).unwrap())
+                    .unwrap(),
                 self.process,
                 self.pid,
                 message
@@ -165,7 +173,9 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
             w,
             "<{}> 1 {} {} {} {} {} {} {}", // v1
             encode_priority(severity, self.facility),
-            time::now_utc().rfc3339(),
+            time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
             self.hostname
                 .as_ref()
                 .map(|x| &x[..])
