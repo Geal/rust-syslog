@@ -75,7 +75,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 w,
                 "<{}>{} {} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::OffsetDateTime::now_local()
+                now_local()
                     .map(|timestamp| timestamp.format(&format).unwrap())
                     .unwrap(),
                 hostname,
@@ -89,7 +89,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 w,
                 "<{}>{} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::OffsetDateTime::now_local()
+                now_local()
                     .map(|timestamp| timestamp.format(&format).unwrap())
                     .unwrap(),
                 self.process,
@@ -164,4 +164,16 @@ impl<T: Display> LogFormat<(i32, StructuredData, T)> for Formatter5424 {
 
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
+}
+
+#[cfg(unix)]
+// On unix platforms, time::OffsetDateTime::now_local always returns an error so use UTC instead
+// https://github.com/time-rs/time/issues/380
+fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
+    Ok(time::OffsetDateTime::now_utc())
+}
+
+#[cfg(not(unix))]
+fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
+    time::OffsetDateTime::now_local()
 }
