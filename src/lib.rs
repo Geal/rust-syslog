@@ -84,8 +84,8 @@ pub type Priority = u8;
 
 /// Main logging structure
 pub struct Logger<Backend: Write, Formatter> {
-    formatter: Formatter,
-    backend: Backend,
+    pub formatter: Formatter,
+    pub backend: Backend,
 }
 
 impl<W: Write, F> Logger<W, F> {
