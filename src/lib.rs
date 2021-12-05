@@ -57,15 +57,15 @@ extern crate log;
 extern crate time;
 
 use std::env;
+use std::path::Path;
+use std::process;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 #[cfg(unix)]
 use std::os::unix::net::{UnixDatagram, UnixStream};
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use libc::getpid;
 use log::{Level, Log, Metadata, Record};
 
 mod errors;
@@ -495,7 +495,7 @@ pub fn init(
     Ok(())
 }
 
-fn get_process_info() -> Result<(String, i32)> {
+fn get_process_info() -> Result<(String, u32)> {
     env::current_exe()
         .chain_err(|| ErrorKind::Initialization)
         .and_then(|path| {
@@ -504,8 +504,5 @@ fn get_process_info() -> Result<(String, i32)> {
                 .map(|name| name.to_string())
                 .chain_err(|| ErrorKind::Initialization)
         })
-        .map(|name| {
-            let pid = unsafe { getpid() };
-            (name, pid)
-        })
+        .map(|name| (name, process::id()))
 }
