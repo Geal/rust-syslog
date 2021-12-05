@@ -68,12 +68,18 @@ pub struct Formatter3164 {
 
 impl<T: Display> LogFormat<T> for Formatter3164 {
     fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()> {
+        let format =
+            time::format_description::parse("[month repr:short] [day] [hour]:[minute]:[second]")
+                .unwrap();
+
         if let Some(ref hostname) = self.hostname {
             write!(
                 w,
                 "<{}>{} {} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::now().strftime("%b %d %T").unwrap(),
+                now_local()
+                    .map(|timestamp| timestamp.format(&format).unwrap())
+                    .unwrap(),
                 hostname,
                 self.process,
                 self.pid,
@@ -85,7 +91,9 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 w,
                 "<{}>{} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                time::now().strftime("%b %d %T").unwrap(),
+                now_local()
+                    .map(|timestamp| timestamp.format(&format).unwrap())
+                    .unwrap(),
                 self.process,
                 self.pid,
                 message
@@ -96,30 +104,30 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
 }
 
 impl Default for Formatter3164 {
-  /// Returns a `Formatter3164` with default settings.
-  /// 
-  /// The default settings are as follows:
-  /// 
-  /// * `facility`: `LOG_USER`, as [specified by POSIX].
-  /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
-  /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
-  /// * `pid`: Automatically detected using [`libc::getpid`].
-  /// 
-  /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
-  /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
-  /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
-  /// [the `hostname` crate]: https://crates.io/crates/hostname
-  fn default() -> Self {
-    let (process, pid) = get_process_info().unwrap_or((String::new(), std::process::id() ));
-    let hostname = get_hostname().ok();
+    /// Returns a `Formatter3164` with default settings.
+    ///
+    /// The default settings are as follows:
+    ///
+    /// * `facility`: `LOG_USER`, as [specified by POSIX].
+    /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
+    /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
+    /// * `pid`: Automatically detected using [`libc::getpid`].
+    ///
+    /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
+    /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
+    /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
+    /// [the `hostname` crate]: https://crates.io/crates/hostname
+    fn default() -> Self {
+        let (process, pid) = get_process_info().unwrap_or((String::new(), std::process::id()));
+        let hostname = get_hostname().ok();
 
-    Self {
-      facility: Default::default(),
-      hostname,
-      process,
-      pid,
+        Self {
+            facility: Default::default(),
+            hostname,
+            process,
+            pid,
+        }
     }
-  }
 }
 
 /// RFC 5424 structured data
@@ -165,7 +173,9 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
             w,
             "<{}> 1 {} {} {} {} {} {} {}", // v1
             encode_priority(severity, self.facility),
-            time::now_utc().rfc3339(),
+            time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap(),
             self.hostname
                 .as_ref()
                 .map(|x| &x[..])
@@ -181,66 +191,88 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
 }
 
 impl Default for Formatter5424 {
-  /// Returns a `Formatter5424` with default settings.
-  /// 
-  /// The default settings are as follows:
-  /// 
-  /// * `facility`: `LOG_USER`, as [specified by POSIX].
-  /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
-  /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
-  /// * `pid`: Automatically detected using [`libc::getpid`].
-  /// 
-  /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
-  /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
-  /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
-  /// [the `hostname` crate]: https://crates.io/crates/hostname
-  fn default() -> Self {
-    // Get the defaults from `Formatter3164` and move them over.
-    let Formatter3164 { facility, hostname, process, pid } = Default::default();
-    Self { facility, hostname, process, pid }
-  }
+    /// Returns a `Formatter5424` with default settings.
+    ///
+    /// The default settings are as follows:
+    ///
+    /// * `facility`: `LOG_USER`, as [specified by POSIX].
+    /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
+    /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
+    /// * `pid`: Automatically detected using [`libc::getpid`].
+    ///
+    /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
+    /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
+    /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
+    /// [the `hostname` crate]: https://crates.io/crates/hostname
+    fn default() -> Self {
+        // Get the defaults from `Formatter3164` and move them over.
+        let Formatter3164 {
+            facility,
+            hostname,
+            process,
+            pid,
+        } = Default::default();
+        Self {
+            facility,
+            hostname,
+            process,
+            pid,
+        }
+    }
 }
 
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
 }
 
+#[cfg(unix)]
+// On unix platforms, time::OffsetDateTime::now_local always returns an error so use UTC instead
+// https://github.com/time-rs/time/issues/380
+fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
+    Ok(time::OffsetDateTime::now_utc())
+}
+
+#[cfg(not(unix))]
+fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
+    time::OffsetDateTime::now_local()
+}
+
 #[test]
 fn test_formatter3164_defaults() {
-  let d = Formatter3164::default();
+    let d = Formatter3164::default();
 
-  // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
-  assert!(match d.facility {
-    Facility::LOG_USER => true,
-    _ => false
-  });
+    // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+    assert!(match d.facility {
+        Facility::LOG_USER => true,
+        _ => false,
+    });
 
-  assert!(match &d.hostname {
-    Some(hostname) => !hostname.is_empty(),
-    None => false,
-  });
+    assert!(match &d.hostname {
+        Some(hostname) => !hostname.is_empty(),
+        None => false,
+    });
 
-  assert!(!d.process.is_empty());
+    assert!(!d.process.is_empty());
 
-  // Can't really make any assertions about the pid.
+    // Can't really make any assertions about the pid.
 }
 
 #[test]
 fn test_formatter5424_defaults() {
-  let d = Formatter5424::default();
+    let d = Formatter5424::default();
 
-  // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
-  assert!(match d.facility {
-    Facility::LOG_USER => true,
-    _ => false
-  });
+    // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+    assert!(match d.facility {
+        Facility::LOG_USER => true,
+        _ => false,
+    });
 
-  assert!(match &d.hostname {
-    Some(hostname) => !hostname.is_empty(),
-    None => false,
-  });
+    assert!(match &d.hostname {
+        Some(hostname) => !hostname.is_empty(),
+        None => false,
+    });
 
-  assert!(!d.process.is_empty());
+    assert!(!d.process.is_empty());
 
-  // Can't really make any assertions about the pid.
+    // Can't really make any assertions about the pid.
 }

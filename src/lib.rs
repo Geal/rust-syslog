@@ -59,13 +59,13 @@ extern crate log;
 extern crate time;
 
 use std::env;
-use std::path::Path;
-use std::process;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 #[cfg(unix)]
 use std::os::unix::net::{UnixDatagram, UnixStream};
+use std::path::Path;
+use std::process;
 use std::sync::{Arc, Mutex};
 
 use log::{Level, Log, Metadata, Record};
@@ -260,7 +260,7 @@ pub fn unix_custom<P: AsRef<Path>, F>(_formatter: F, _path: P) -> Result<Logger<
 
 /// EPROTOTYPE error happens if w use the wrong protocole fo the socket
 /// we use thatt error to detect what kind of logging socket we are targeting
-const EPROTOTYPE:i32 = 91;
+const EPROTOTYPE: i32 = 91;
 
 #[cfg(unix)]
 fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
@@ -334,7 +334,7 @@ impl BasicLogger {
 #[allow(unused_variables, unused_must_use)]
 impl Log for BasicLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-         metadata.level() <= log::max_level() && metadata.level() <= log::STATIC_MAX_LEVEL
+        metadata.level() <= log::max_level() && metadata.level() <= log::STATIC_MAX_LEVEL
     }
 
     fn log(&self, record: &Record) {
@@ -514,5 +514,5 @@ fn get_process_info() -> Result<(String, u32)> {
 }
 
 fn get_hostname() -> Result<String> {
-  Ok(hostname::get()?.to_string_lossy().to_string())
+    Ok(hostname::get()?.to_string_lossy().to_string())
 }
