@@ -11,10 +11,9 @@ keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
 hostname    = "^0.3"
-libc        = "^0.2"
-time        = "^0.1"
-log         = { version =  "^0.4", features = [ "std" ] }
-error-chain = { version = "^0.12", default-features = false }
+time        = "0.1.42"
+log         = { version = "0.4.8", features = [ "std" ] }
+error-chain = { version = "0.12.2", default-features = false }
 
 [features]
 nightly = []
