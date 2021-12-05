@@ -480,7 +480,7 @@ pub fn init(
     let process = application_name.map(From::from).unwrap_or(process_name);
     let formatter = Formatter3164 {
         facility,
-        hostname: None,
+        hostname: get_hostname().ok(),
         process,
         pid,
     };
@@ -511,4 +511,8 @@ fn get_process_info() -> Result<(String, u32)> {
                 .chain_err(|| ErrorKind::Initialization)
         })
         .map(|name| (name, process::id()))
+}
+
+fn get_hostname() -> Result<String> {
+  Ok(hostname::get()?.to_string_lossy().to_string())
 }

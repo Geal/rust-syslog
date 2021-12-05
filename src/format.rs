@@ -5,6 +5,8 @@ use time;
 
 use errors::*;
 use facility::Facility;
+use get_hostname;
+use get_process_info;
 use Priority;
 
 #[allow(non_camel_case_types)]
@@ -93,6 +95,33 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
     }
 }
 
+impl Default for Formatter3164 {
+  /// Returns a `Formatter3164` with default settings.
+  /// 
+  /// The default settings are as follows:
+  /// 
+  /// * `facility`: `LOG_USER`, as [specified by POSIX].
+  /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
+  /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
+  /// * `pid`: Automatically detected using [`libc::getpid`].
+  /// 
+  /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
+  /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
+  /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
+  /// [the `hostname` crate]: https://crates.io/crates/hostname
+  fn default() -> Self {
+    let (process, pid) = get_process_info().unwrap_or((String::new(), std::process::id() ));
+    let hostname = get_hostname().ok();
+
+    Self {
+      facility: Default::default(),
+      hostname,
+      process,
+      pid,
+    }
+  }
+}
+
 /// RFC 5424 structured data
 pub type StructuredData = HashMap<String, HashMap<String, String>>;
 
@@ -151,6 +180,67 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
     }
 }
 
+impl Default for Formatter5424 {
+  /// Returns a `Formatter5424` with default settings.
+  /// 
+  /// The default settings are as follows:
+  /// 
+  /// * `facility`: `LOG_USER`, as [specified by POSIX].
+  /// * `hostname`: Automatically detected using [the `hostname` crate], if possible.
+  /// * `process`: Automatically detected using [`std::env::current_exe`], or if that fails, an empty string.
+  /// * `pid`: Automatically detected using [`libc::getpid`].
+  /// 
+  /// [`libc::getpid`]: https://docs.rs/libc/0.2/libc/fn.getpid.html
+  /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
+  /// [`std::env::current_exe`]: https://doc.rust-lang.org/std/env/fn.current_exe.html
+  /// [the `hostname` crate]: https://crates.io/crates/hostname
+  fn default() -> Self {
+    // Get the defaults from `Formatter3164` and move them over.
+    let Formatter3164 { facility, hostname, process, pid } = Default::default();
+    Self { facility, hostname, process, pid }
+  }
+}
+
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
+}
+
+#[test]
+fn test_formatter3164_defaults() {
+  let d = Formatter3164::default();
+
+  // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+  assert!(match d.facility {
+    Facility::LOG_USER => true,
+    _ => false
+  });
+
+  assert!(match &d.hostname {
+    Some(hostname) => !hostname.is_empty(),
+    None => false,
+  });
+
+  assert!(!d.process.is_empty());
+
+  // Can't really make any assertions about the pid.
+}
+
+#[test]
+fn test_formatter5424_defaults() {
+  let d = Formatter5424::default();
+
+  // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+  assert!(match d.facility {
+    Facility::LOG_USER => true,
+    _ => false
+  });
+
+  assert!(match &d.hostname {
+    Some(hostname) => !hostname.is_empty(),
+    None => false,
+  });
+
+  assert!(!d.process.is_empty());
+
+  // Can't really make any assertions about the pid.
 }

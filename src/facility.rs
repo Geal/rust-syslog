@@ -54,3 +54,12 @@ impl FromStr for Facility {
         Ok(result)
     }
 }
+
+impl Default for Facility {
+    /// Returns the default `Facility`, which is `LOG_USER` (as [specified by POSIX]).
+    /// 
+    /// [specified by POSIX]: https://pubs.opengroup.org/onlinepubs/9699919799/functions/closelog.html
+    fn default() -> Self {
+        Facility::LOG_USER
+    }
+}

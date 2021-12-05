@@ -10,6 +10,7 @@ documentation = "https://docs.rs/syslog"
 keywords = ["syslog", "logs", "logging"]
 
 [dependencies]
+hostname    = "^0.3"
 time        = "0.1.42"
 log         = { version = "0.4.8", features = [ "std" ] }
 error-chain = { version = "0.12.2", default-features = false }
