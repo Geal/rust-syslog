@@ -11,7 +11,7 @@ syslog is available on [crates.io](https://crates.io/crates/syslog) and can be i
 
 ```toml
 [dependencies]
-syslog = "^4.0"
+syslog = "^6.0"
 ```
 
 ## documentation
