@@ -258,10 +258,6 @@ pub fn unix_custom<P: AsRef<Path>, F>(_formatter: F, _path: P) -> Result<Logger<
     Err(ErrorKind::UnsupportedPlatform)?
 }
 
-/// EPROTOTYPE error happens if w use the wrong protocole fo the socket
-/// we use thatt error to detect what kind of logging socket we are targeting
-const EPROTOTYPE: i32 = 91;
-
 #[cfg(unix)]
 fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
     let sock = UnixDatagram::unbound()?;
@@ -270,7 +266,7 @@ fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<Logge
             formatter,
             backend: LoggerBackend::Unix(sock),
         }),
-        Err(ref e) if e.raw_os_error() == Some(EPROTOTYPE) => {
+        Err(ref e) if e.raw_os_error() == Some(libc::EPROTOTYPE) => {
             let sock = UnixStream::connect(path)?;
             Ok(Logger {
                 formatter,
