@@ -81,6 +81,8 @@ pub use format::{Formatter3164, Formatter5424, LogFormat};
 
 pub type Priority = u8;
 
+const UNIX_SOCK_PATHS: [&str; 3] = ["/dev/log", "/var/run/syslog", "/var/run/log"];
+
 /// Main logging structure
 pub struct Logger<Backend: Write, Formatter> {
     pub formatter: Formatter,
@@ -230,16 +232,27 @@ impl Write for LoggerBackend {
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 #[cfg(unix)]
 pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
-    unix_connect(formatter.clone(), "/dev/log")
-        .or_else(|e| {
-            if let ErrorKind::Io(ref io_err) = *e.kind() {
-                if io_err.kind() == io::ErrorKind::NotFound {
-                    return unix_connect(formatter, "/var/run/syslog");
-                }
-            }
-            Err(e)
+    UNIX_SOCK_PATHS
+        .iter()
+        .find_map(|path| {
+            unix_connect(formatter.clone(), *path).map_or_else(
+                |e| {
+                    if let ErrorKind::Io(ref io_err) = e.kind() {
+                        if io_err.kind() == io::ErrorKind::NotFound {
+                            None // not considered an error, try the next path
+                        } else {
+                            Some(Err(e))
+                        }
+                    } else {
+                        Some(Err(e))
+                    }
+                },
+                |logger| Some(Ok(logger)),
+            )
         })
-        .chain_err(|| ErrorKind::Initialization)
+        .transpose()
+        .chain_err(|| ErrorKind::Initialization)?
+        .ok_or_else(|| Error::from_kind(ErrorKind::Initialization))
 }
 
 #[cfg(not(unix))]
