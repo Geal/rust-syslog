@@ -1,7 +1,7 @@
 [package]
 
 name = "syslog"
-version = "6.0.1"
+version = "6.1.0"
 authors = [ "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"
 license = "MIT"
