@@ -170,16 +170,16 @@ impl Write for LoggerBackend {
     fn write(&mut self, message: &[u8]) -> io::Result<usize> {
         match *self {
             #[cfg(unix)]
-            LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
+            LoggerBackend::Unix(ref dgram) => dgram.send(message),
             #[cfg(unix)]
             LoggerBackend::UnixStream(ref mut socket) => {
                 let null = [0; 1];
                 socket
-                    .write(&message[..])
+                    .write(message)
                     .and_then(|sz| socket.write(&null).map(|_| sz))
             }
-            LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(&message[..], addr),
-            LoggerBackend::Tcp(ref mut socket) => socket.write(&message[..]),
+            LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(message, addr),
+            LoggerBackend::Tcp(ref mut socket) => socket.write(message),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -307,11 +307,9 @@ pub fn udp<T: ToSocketAddrs, F>(
         .and_then(|server_addr| {
             UdpSocket::bind(local)
                 .chain_err(|| ErrorKind::Initialization)
-                .and_then(|socket| {
-                    Ok(Logger {
-                        formatter,
-                        backend: LoggerBackend::Udp(socket, server_addr),
-                    })
+                .map(|socket| Logger {
+                    formatter,
+                    backend: LoggerBackend::Udp(socket, server_addr),
                 })
         })
 }
@@ -320,11 +318,9 @@ pub fn udp<T: ToSocketAddrs, F>(
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
-        .and_then(|socket| {
-            Ok(Logger {
-                formatter,
-                backend: LoggerBackend::Tcp(BufWriter::new(socket)),
-            })
+        .map(|socket| Logger {
+            formatter,
+            backend: LoggerBackend::Tcp(BufWriter::new(socket)),
         })
 }
 
