@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::io::Write;
 use time;
 
-use errors::*;
+use errors::{Error, Result};
 use facility::Facility;
 use get_hostname;
 use get_process_info;
@@ -85,7 +85,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 self.pid,
                 message
             )
-            .chain_err(|| ErrorKind::Format)
+            .map_err(Error::Format)
         } else {
             write!(
                 w,
@@ -98,7 +98,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
                 self.pid,
                 message
             )
-            .chain_err(|| ErrorKind::Format)
+            .map_err(Error::Format)
         }
     }
 }
@@ -186,7 +186,7 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
             self.format_5424_structured_data(data),
             message
         )
-        .chain_err(|| ErrorKind::Format)
+        .map_err(Error::Format)
     }
 }
 
