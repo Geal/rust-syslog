@@ -1,7 +1,6 @@
 extern crate syslog;
 
-use std::collections::HashMap;
-use syslog::{Facility, Formatter5424};
+use syslog::{Facility, Formatter5424, SyslogMessage};
 
 fn main() {
     let formatter = Formatter5424 {
@@ -15,7 +14,11 @@ fn main() {
         Err(e) => println!("impossible to connect to syslog: {:?}", e),
         Ok(mut writer) => {
             writer
-                .err((1, HashMap::new(), "hello world"))
+                .err(SyslogMessage {
+                    message_level: 1,
+                    structured: Vec::new(),
+                    message: "hello world".to_string(),
+                })
                 .expect("could not write error message");
         }
     }

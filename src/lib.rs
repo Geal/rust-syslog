@@ -51,12 +51,9 @@
 //!
 //! info!("hello world");
 //!
-#![crate_type = "lib"]
-
+//! 
 #[macro_use]
 extern crate error_chain;
-extern crate log;
-extern crate time;
 
 use std::env;
 use std::fmt::{self, Arguments};
@@ -67,7 +64,6 @@ use std::os::unix::net::{UnixDatagram, UnixStream};
 use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
-
 use log::{Level, Log, Metadata, Record};
 
 mod errors;
@@ -77,7 +73,9 @@ pub use errors::*;
 pub use facility::Facility;
 pub use format::Severity;
 
-pub use format::{Formatter3164, Formatter5424, LogFormat};
+pub use format::{Formatter3164, Formatter5424, LogFormat, StructuredData, SyslogMessage};
+use native_tls::{TlsStream, Certificate, TlsConnector};
+use time::OffsetDateTime;
 
 pub type Priority = u8;
 
@@ -92,6 +90,21 @@ pub struct Logger<Backend: Write, Formatter> {
 impl<W: Write, F> Logger<W, F> {
     pub fn new(backend: W, formatter: F) -> Self {
         Logger { backend, formatter }
+    }
+
+    pub fn send<T>(&mut self, severity: Severity, message: T) -> Result<()>
+    where
+        F: LogFormat<T>,
+    {
+        self.formatter.format(&mut self.backend, severity, message)
+    }
+
+    pub fn send_at<T>(&mut self, severity: Severity, time: OffsetDateTime, message: T) -> Result<()>
+    where
+        F: LogFormat<T>,
+    {
+        self.formatter
+            .format_at(&mut self.backend, severity, time, message)
     }
 
     pub fn emerg<T>(&mut self, message: T) -> Result<()>
@@ -163,6 +176,7 @@ pub enum LoggerBackend {
     UnixStream(()),
     Udp(UdpSocket, SocketAddr),
     Tcp(BufWriter<TcpStream>),
+    Tls(BufWriter<TlsStream<TcpStream>>),
 }
 
 impl Write for LoggerBackend {
@@ -179,7 +193,14 @@ impl Write for LoggerBackend {
                     .and_then(|sz| socket.write(&null).map(|_| sz))
             }
             LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(message, addr),
-            LoggerBackend::Tcp(ref mut socket) => socket.write(message),
+            LoggerBackend::Tcp(ref mut socket) => socket.write(message).and_then(|bytes_written| {
+                socket.flush()?;
+                Ok(bytes_written)
+            }),
+            LoggerBackend::Tls(ref mut socket) => socket.write(message).and_then(|bytes_written| {
+                socket.flush()?;
+                Ok(bytes_written)
+            }),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -188,29 +209,9 @@ impl Write for LoggerBackend {
     }
 
     fn write_fmt(&mut self, args: Arguments) -> io::Result<()> {
-        match *self {
-            #[cfg(unix)]
-            LoggerBackend::Unix(ref dgram) => {
-                let message = fmt::format(args);
-                dgram.send(message.as_bytes()).map(|_| ())
-            }
-            #[cfg(unix)]
-            LoggerBackend::UnixStream(ref mut socket) => {
-                let null = [0; 1];
-                socket
-                    .write_fmt(args)
-                    .and_then(|_| socket.write(&null).map(|_| ()))
-            }
-            LoggerBackend::Udp(ref socket, ref addr) => {
-                let message = fmt::format(args);
-                socket.send_to(message.as_bytes(), addr).map(|_| ())
-            }
-            LoggerBackend::Tcp(ref mut socket) => socket.write_fmt(args),
-            #[cfg(not(unix))]
-            LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
-                Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
-            }
-        }
+        // Ensure we send the entire message was one packet, because each write may do a flush.
+        let message = fmt::format(args);
+        self.write(message.as_bytes()).map(|_| ())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -221,6 +222,7 @@ impl Write for LoggerBackend {
             LoggerBackend::UnixStream(ref mut socket) => socket.flush(),
             LoggerBackend::Udp(_, _) => Ok(()),
             LoggerBackend::Tcp(ref mut socket) => socket.flush(),
+            LoggerBackend::Tls(ref mut socket) => socket.flush(),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -323,6 +325,30 @@ pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<Logger
             backend: LoggerBackend::Tcp(BufWriter::new(socket)),
         })
 }
+
+
+pub fn tls<F>(
+    formatter: F,
+    server: SocketAddr,
+    cert: Certificate,
+    host_domain: &str,
+) -> Result<Logger<LoggerBackend, F>> {
+    // Start connection
+    let connector = TlsConnector::builder()
+        .add_root_certificate(cert)
+        .build()
+        .chain_err(|| "Failed to build TLS connector.")?;
+    let stream = TcpStream::connect(server).chain_err(|| "Failed to initialize TCP socket.")?;
+    let stream = connector
+        .connect(host_domain, stream)
+        .chain_err(|| "Failed to initialize TLS over the TCP stream.")?;
+
+    Ok(Logger {
+        formatter,
+        backend: LoggerBackend::Tls(BufWriter::new(stream)),
+    })
+}
+
 
 pub struct BasicLogger {
     logger: Arc<Mutex<Logger<LoggerBackend, Formatter3164>>>,

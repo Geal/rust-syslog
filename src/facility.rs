@@ -1,3 +1,4 @@
+// (C) COPYRIGHT 2023 TECHNOLUTION BV, GOUDA NL
 use std::str::FromStr;
 
 #[allow(non_camel_case_types)]
