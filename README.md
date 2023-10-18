@@ -10,7 +10,7 @@ syslog-tls is available on [crates.io](https://crates.io/crates/syslog-tls) and 
 
 ```toml
 [dependencies]
-syslog = "^6.0"
+syslog = "^7.0"
 ```
 
 ## documentation
