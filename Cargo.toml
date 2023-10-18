@@ -1,6 +1,6 @@
 [package]
 
-name = "syslog"
+name = "syslog-tls"
 version = "7.0.0"
 authors = [ "jonathan.brouwer@technolution.nl", "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"

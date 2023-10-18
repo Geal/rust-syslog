@@ -316,7 +316,7 @@ pub fn udp<T: ToSocketAddrs, F>(
         })
 }
 
-/// returns a TCP logger connecting `local` and `server`
+/// returns a TCP logger connecting to `server`
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
@@ -325,8 +325,7 @@ pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<Logger
             backend: LoggerBackend::Tcp(BufWriter::new(socket)),
         })
 }
-
-
+/// returns a TLS logger connecting to `server`, using `cert` checked against `host_domain`.
 pub fn tls<F>(
     formatter: F,
     server: SocketAddr,

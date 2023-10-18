@@ -1,6 +1,6 @@
-extern crate syslog;
+extern crate syslog_tls;
 
-use syslog::{Facility, Formatter5424, SyslogMessage};
+use syslog_tls::{Facility, Formatter5424, SyslogMessage};
 
 fn main() {
     let formatter = Formatter5424 {
@@ -10,7 +10,7 @@ fn main() {
         pid: 0,
     };
 
-    match syslog::unix(formatter) {
+    match syslog_tls::unix(formatter) {
         Err(e) => println!("impossible to connect to syslog: {:?}", e),
         Ok(mut writer) => {
             writer
