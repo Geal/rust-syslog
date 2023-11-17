@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```rust
-//! use syslog::{Facility, Formatter3164};
+//! use syslog_tls::{Facility, Formatter3164};
 //!
 //! let formatter = Formatter3164 {
 //!     facility: Facility::LOG_USER,
@@ -19,7 +19,7 @@
 //!     pid: 0,
 //! };
 //!
-//! match syslog::unix(formatter) {
+//! match syslog_tls::unix(formatter) {
 //!     Err(e) => println!("impossible to connect to syslog: {:?}", e),
 //!     Ok(mut writer) => {
 //!         writer.err("hello world").expect("could not write error message");
@@ -32,7 +32,7 @@
 //! ```rust
 //! extern crate log;
 //!
-//! use syslog::{Facility, Formatter3164, BasicLogger};
+//! use syslog_tls::{Facility, Formatter3164, BasicLogger};
 //! use log::{SetLoggerError, LevelFilter, info};
 //!
 //! let formatter = Formatter3164 {
@@ -42,7 +42,7 @@
 //!     pid: 0,
 //! };
 //!
-//! let logger = match syslog::unix(formatter) {
+//! let logger = match syslog_tls::unix(formatter) {
 //!     Err(e) => { println!("impossible to connect to syslog: {:?}", e); return; },
 //!     Ok(logger) => logger,
 //! };
@@ -92,14 +92,14 @@ impl<W: Write, F> Logger<W, F> {
         Logger { backend, formatter }
     }
 
-    pub fn send<T>(&mut self, severity: Severity, message: T) -> Result<()>
+    pub fn send<T>(&mut self, severity: Severity, message: &T) -> Result<()>
     where
         F: LogFormat<T>,
     {
         self.formatter.format(&mut self.backend, severity, message)
     }
 
-    pub fn send_at<T>(&mut self, severity: Severity, time: OffsetDateTime, message: T) -> Result<()>
+    pub fn send_at<T>(&mut self, severity: Severity, time: OffsetDateTime, message: &T) -> Result<()>
     where
         F: LogFormat<T>,
     {
@@ -111,56 +111,56 @@ impl<W: Write, F> Logger<W, F> {
     where
         F: LogFormat<T>,
     {
-        self.formatter.emerg(&mut self.backend, message)
+        self.formatter.emerg(&mut self.backend, &message)
     }
 
     pub fn alert<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.alert(&mut self.backend, message)
+        self.formatter.alert(&mut self.backend, &message)
     }
 
     pub fn crit<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.crit(&mut self.backend, message)
+        self.formatter.crit(&mut self.backend, &message)
     }
 
     pub fn err<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.err(&mut self.backend, message)
+        self.formatter.err(&mut self.backend, &message)
     }
 
     pub fn warning<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.warning(&mut self.backend, message)
+        self.formatter.warning(&mut self.backend, &message)
     }
 
     pub fn notice<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.notice(&mut self.backend, message)
+        self.formatter.notice(&mut self.backend, &message)
     }
 
     pub fn info<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.info(&mut self.backend, message)
+        self.formatter.info(&mut self.backend, &message)
     }
 
     pub fn debug<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.debug(&mut self.backend, message)
+        self.formatter.debug(&mut self.backend, &message)
     }
 }
 
@@ -372,11 +372,11 @@ impl Log for BasicLogger {
         let message = format!("{}", record.args());
         let mut logger = self.logger.lock().unwrap();
         match record.level() {
-            Level::Error => logger.err(message),
-            Level::Warn => logger.warning(message),
-            Level::Info => logger.info(message),
-            Level::Debug => logger.debug(message),
-            Level::Trace => logger.debug(message),
+            Level::Error => logger.err(&message),
+            Level::Warn => logger.warning(&message),
+            Level::Info => logger.info(&message),
+            Level::Debug => logger.debug(&message),
+            Level::Trace => logger.debug(&message),
         };
     }
 

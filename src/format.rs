@@ -22,7 +22,7 @@ pub enum Severity {
 }
 
 pub trait LogFormat<T> {
-    fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()> {
+    fn format<W: Write>(&self, w: &mut W, severity: Severity, message: &T) -> Result<()> {
         self.format_at(w, severity, now_local().unwrap(), message)
     }
 
@@ -31,38 +31,38 @@ pub trait LogFormat<T> {
         w: &mut W,
         severity: Severity,
         time: OffsetDateTime,
-        message: T,
+        message: &T,
     ) -> Result<()>;
 
-    fn emerg<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn emerg<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_EMERG, message)
     }
 
-    fn alert<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn alert<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_ALERT, message)
     }
 
-    fn crit<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn crit<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_CRIT, message)
     }
 
-    fn err<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn err<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_ERR, message)
     }
 
-    fn warning<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn warning<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_WARNING, message)
     }
 
-    fn notice<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn notice<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_NOTICE, message)
     }
 
-    fn info<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn info<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_INFO, message)
     }
 
-    fn debug<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn debug<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_DEBUG, message)
     }
 }
@@ -81,7 +81,7 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
         w: &mut W,
         severity: Severity,
         time: OffsetDateTime,
-        message: T,
+        message: &T,
     ) -> Result<()> {
         let format =
             time::format_description::parse("[month repr:short] [day] [hour]:[minute]:[second]")
@@ -159,12 +159,12 @@ pub struct Formatter5424 {
 }
 
 impl Formatter5424 {
-    pub fn format_5424_structured_data(&self, data: StructuredData) -> String {
+    pub fn format_5424_structured_data(&self, data: &StructuredData) -> String {
         if data.is_empty() {
             "-".to_string()
         } else {
             let mut res = String::new();
-            for (id, params) in &data {
+            for (id, params) in data {
                 res = res + "[" + id;
                 for (name, value) in params {
                     res = res + " " + name + "=\"" + value + "\"";
@@ -183,7 +183,7 @@ impl LogFormat<SyslogMessage> for Formatter5424 {
         w: &mut W,
         severity: Severity,
         time: OffsetDateTime,
-        message: SyslogMessage,
+        message: &SyslogMessage,
     ) -> Result<()> {
         write!(
             w,
@@ -198,7 +198,7 @@ impl LogFormat<SyslogMessage> for Formatter5424 {
             self.process,
             self.pid,
             message.message_level,
-            self.format_5424_structured_data(message.structured),
+            self.format_5424_structured_data(&message.structured),
             message.message,
             // Append new-line at the end of message if not present, mandatory for RFC5424
             if message.message.ends_with('\n') {
