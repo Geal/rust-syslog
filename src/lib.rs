@@ -51,10 +51,11 @@
 //!
 //! info!("hello world");
 //!
-//! 
+//!
 #[macro_use]
 extern crate error_chain;
 
+use log::{Level, Log, Metadata, Record};
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
@@ -64,7 +65,7 @@ use std::os::unix::net::{UnixDatagram, UnixStream};
 use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
-use log::{Level, Log, Metadata, Record};
+use std::time::Duration;
 
 mod errors;
 mod facility;
@@ -74,12 +75,13 @@ pub use facility::Facility;
 pub use format::Severity;
 
 pub use format::{Formatter3164, Formatter5424, LogFormat, StructuredData, SyslogMessage};
-use native_tls::{TlsStream, Certificate, TlsConnector};
+use native_tls::{Certificate, TlsConnector, TlsStream};
 use time::OffsetDateTime;
 
 pub type Priority = u8;
 
 const UNIX_SOCK_PATHS: [&str; 3] = ["/dev/log", "/var/run/syslog", "/var/run/log"];
+const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Main logging structure
 pub struct Logger<Backend: Write, Formatter> {
@@ -99,7 +101,12 @@ impl<W: Write, F> Logger<W, F> {
         self.formatter.format(&mut self.backend, severity, message)
     }
 
-    pub fn send_at<T>(&mut self, severity: Severity, time: OffsetDateTime, message: &T) -> Result<()>
+    pub fn send_at<T>(
+        &mut self,
+        severity: Severity,
+        time: OffsetDateTime,
+        message: &T,
+    ) -> Result<()>
     where
         F: LogFormat<T>,
     {
@@ -309,9 +316,12 @@ pub fn udp<T: ToSocketAddrs, F>(
         .and_then(|server_addr| {
             UdpSocket::bind(local)
                 .chain_err(|| ErrorKind::Initialization)
-                .map(|socket| Logger {
-                    formatter,
-                    backend: LoggerBackend::Udp(socket, server_addr),
+                .and_then(|socket| {
+                    socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
+                    Ok(Logger {
+                        formatter,
+                        backend: LoggerBackend::Udp(socket, server_addr),
+                    })
                 })
         })
 }
@@ -320,9 +330,12 @@ pub fn udp<T: ToSocketAddrs, F>(
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
-        .map(|socket| Logger {
-            formatter,
-            backend: LoggerBackend::Tcp(BufWriter::new(socket)),
+        .and_then(|socket| {
+            socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
+            Ok(Logger {
+                formatter,
+                backend: LoggerBackend::Tcp(BufWriter::new(socket)),
+            })
         })
 }
 /// returns a TLS logger connecting to `server`, using `cert` checked against `host_domain`.
@@ -338,16 +351,15 @@ pub fn tls<F>(
         .build()
         .chain_err(|| "Failed to build TLS connector.")?;
     let stream = TcpStream::connect(server).chain_err(|| "Failed to initialize TCP socket.")?;
+    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let stream = connector
         .connect(host_domain, stream)
         .chain_err(|| "Failed to initialize TLS over the TCP stream.")?;
-
     Ok(Logger {
         formatter,
         backend: LoggerBackend::Tls(BufWriter::new(stream)),
     })
 }
-
 
 pub struct BasicLogger {
     logger: Arc<Mutex<Logger<LoggerBackend, Formatter3164>>>,
