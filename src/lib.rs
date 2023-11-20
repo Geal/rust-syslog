@@ -65,7 +65,6 @@ use std::os::unix::net::{UnixDatagram, UnixStream};
 use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 mod errors;
 mod facility;
@@ -81,7 +80,6 @@ use time::OffsetDateTime;
 pub type Priority = u8;
 
 const UNIX_SOCK_PATHS: [&str; 3] = ["/dev/log", "/var/run/syslog", "/var/run/log"];
-const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Main logging structure
 pub struct Logger<Backend: Write, Formatter> {
@@ -317,7 +315,6 @@ pub fn udp<T: ToSocketAddrs, F>(
             UdpSocket::bind(local)
                 .chain_err(|| ErrorKind::Initialization)
                 .and_then(|socket| {
-                    socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
                     Ok(Logger {
                         formatter,
                         backend: LoggerBackend::Udp(socket, server_addr),
@@ -331,7 +328,6 @@ pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<Logger
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
         .and_then(|socket| {
-            socket.set_write_timeout(Some(WRITE_TIMEOUT))?;
             Ok(Logger {
                 formatter,
                 backend: LoggerBackend::Tcp(BufWriter::new(socket)),
@@ -351,7 +347,6 @@ pub fn tls<F>(
         .build()
         .chain_err(|| "Failed to build TLS connector.")?;
     let stream = TcpStream::connect(server).chain_err(|| "Failed to initialize TCP socket.")?;
-    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let stream = connector
         .connect(host_domain, stream)
         .chain_err(|| "Failed to initialize TLS over the TCP stream.")?;
