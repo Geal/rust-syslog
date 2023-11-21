@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```rust
-//! use syslog::{Facility, Formatter3164};
+//! use syslog_tls::{Facility, Formatter3164};
 //!
 //! let formatter = Formatter3164 {
 //!     facility: Facility::LOG_USER,
@@ -19,7 +19,7 @@
 //!     pid: 0,
 //! };
 //!
-//! match syslog::unix(formatter) {
+//! match syslog_tls::unix(formatter) {
 //!     Err(e) => println!("impossible to connect to syslog: {:?}", e),
 //!     Ok(mut writer) => {
 //!         writer.err("hello world").expect("could not write error message");
@@ -32,7 +32,7 @@
 //! ```rust
 //! extern crate log;
 //!
-//! use syslog::{Facility, Formatter3164, BasicLogger};
+//! use syslog_tls::{Facility, Formatter3164, BasicLogger};
 //! use log::{SetLoggerError, LevelFilter, info};
 //!
 //! let formatter = Formatter3164 {
@@ -42,7 +42,7 @@
 //!     pid: 0,
 //! };
 //!
-//! let logger = match syslog::unix(formatter) {
+//! let logger = match syslog_tls::unix(formatter) {
 //!     Err(e) => { println!("impossible to connect to syslog: {:?}", e); return; },
 //!     Ok(logger) => logger,
 //! };
@@ -51,13 +51,11 @@
 //!
 //! info!("hello world");
 //!
-#![crate_type = "lib"]
-
+//!
 #[macro_use]
 extern crate error_chain;
-extern crate log;
-extern crate time;
 
+use log::{Level, Log, Metadata, Record};
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
@@ -68,8 +66,6 @@ use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
 
-use log::{Level, Log, Metadata, Record};
-
 mod errors;
 mod facility;
 mod format;
@@ -77,7 +73,9 @@ pub use errors::*;
 pub use facility::Facility;
 pub use format::Severity;
 
-pub use format::{Formatter3164, Formatter5424, LogFormat};
+pub use format::{Formatter3164, Formatter5424, LogFormat, StructuredData, SyslogMessage};
+use native_tls::{Certificate, TlsConnector, TlsStream};
+use time::OffsetDateTime;
 
 pub type Priority = u8;
 
@@ -94,60 +92,80 @@ impl<W: Write, F> Logger<W, F> {
         Logger { backend, formatter }
     }
 
+    pub fn send<T>(&mut self, severity: Severity, message: &T) -> Result<()>
+    where
+        F: LogFormat<T>,
+    {
+        self.formatter.format(&mut self.backend, severity, message)
+    }
+
+    pub fn send_at<T>(
+        &mut self,
+        severity: Severity,
+        time: OffsetDateTime,
+        message: &T,
+    ) -> Result<()>
+    where
+        F: LogFormat<T>,
+    {
+        self.formatter
+            .format_at(&mut self.backend, severity, time, message)
+    }
+
     pub fn emerg<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.emerg(&mut self.backend, message)
+        self.formatter.emerg(&mut self.backend, &message)
     }
 
     pub fn alert<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.alert(&mut self.backend, message)
+        self.formatter.alert(&mut self.backend, &message)
     }
 
     pub fn crit<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.crit(&mut self.backend, message)
+        self.formatter.crit(&mut self.backend, &message)
     }
 
     pub fn err<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.err(&mut self.backend, message)
+        self.formatter.err(&mut self.backend, &message)
     }
 
     pub fn warning<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.warning(&mut self.backend, message)
+        self.formatter.warning(&mut self.backend, &message)
     }
 
     pub fn notice<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.notice(&mut self.backend, message)
+        self.formatter.notice(&mut self.backend, &message)
     }
 
     pub fn info<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.info(&mut self.backend, message)
+        self.formatter.info(&mut self.backend, &message)
     }
 
     pub fn debug<T>(&mut self, message: T) -> Result<()>
     where
         F: LogFormat<T>,
     {
-        self.formatter.debug(&mut self.backend, message)
+        self.formatter.debug(&mut self.backend, &message)
     }
 }
 
@@ -163,6 +181,7 @@ pub enum LoggerBackend {
     UnixStream(()),
     Udp(UdpSocket, SocketAddr),
     Tcp(BufWriter<TcpStream>),
+    Tls(BufWriter<TlsStream<TcpStream>>),
 }
 
 impl Write for LoggerBackend {
@@ -179,7 +198,14 @@ impl Write for LoggerBackend {
                     .and_then(|sz| socket.write(&null).map(|_| sz))
             }
             LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(message, addr),
-            LoggerBackend::Tcp(ref mut socket) => socket.write(message),
+            LoggerBackend::Tcp(ref mut socket) => socket.write(message).and_then(|bytes_written| {
+                socket.flush()?;
+                Ok(bytes_written)
+            }),
+            LoggerBackend::Tls(ref mut socket) => socket.write(message).and_then(|bytes_written| {
+                socket.flush()?;
+                Ok(bytes_written)
+            }),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -188,29 +214,9 @@ impl Write for LoggerBackend {
     }
 
     fn write_fmt(&mut self, args: Arguments) -> io::Result<()> {
-        match *self {
-            #[cfg(unix)]
-            LoggerBackend::Unix(ref dgram) => {
-                let message = fmt::format(args);
-                dgram.send(message.as_bytes()).map(|_| ())
-            }
-            #[cfg(unix)]
-            LoggerBackend::UnixStream(ref mut socket) => {
-                let null = [0; 1];
-                socket
-                    .write_fmt(args)
-                    .and_then(|_| socket.write(&null).map(|_| ()))
-            }
-            LoggerBackend::Udp(ref socket, ref addr) => {
-                let message = fmt::format(args);
-                socket.send_to(message.as_bytes(), addr).map(|_| ())
-            }
-            LoggerBackend::Tcp(ref mut socket) => socket.write_fmt(args),
-            #[cfg(not(unix))]
-            LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
-                Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
-            }
-        }
+        // Ensure we send the entire message was one packet, because each write may do a flush.
+        let message = fmt::format(args);
+        self.write(message.as_bytes()).map(|_| ())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -221,6 +227,7 @@ impl Write for LoggerBackend {
             LoggerBackend::UnixStream(ref mut socket) => socket.flush(),
             LoggerBackend::Udp(_, _) => Ok(()),
             LoggerBackend::Tcp(ref mut socket) => socket.flush(),
+            LoggerBackend::Tls(ref mut socket) => socket.flush(),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -307,21 +314,46 @@ pub fn udp<T: ToSocketAddrs, F>(
         .and_then(|server_addr| {
             UdpSocket::bind(local)
                 .chain_err(|| ErrorKind::Initialization)
-                .map(|socket| Logger {
-                    formatter,
-                    backend: LoggerBackend::Udp(socket, server_addr),
+                .and_then(|socket| {
+                    Ok(Logger {
+                        formatter,
+                        backend: LoggerBackend::Udp(socket, server_addr),
+                    })
                 })
         })
 }
 
-/// returns a TCP logger connecting `local` and `server`
+/// returns a TCP logger connecting to `server`
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
-        .map(|socket| Logger {
-            formatter,
-            backend: LoggerBackend::Tcp(BufWriter::new(socket)),
+        .and_then(|socket| {
+            Ok(Logger {
+                formatter,
+                backend: LoggerBackend::Tcp(BufWriter::new(socket)),
+            })
         })
+}
+/// returns a TLS logger connecting to `server`, using `cert` checked against `host_domain`.
+pub fn tls<F>(
+    formatter: F,
+    server: SocketAddr,
+    cert: Certificate,
+    host_domain: &str,
+) -> Result<Logger<LoggerBackend, F>> {
+    // Start connection
+    let connector = TlsConnector::builder()
+        .add_root_certificate(cert)
+        .build()
+        .chain_err(|| "Failed to build TLS connector.")?;
+    let stream = TcpStream::connect(server).chain_err(|| "Failed to initialize TCP socket.")?;
+    let stream = connector
+        .connect(host_domain, stream)
+        .chain_err(|| "Failed to initialize TLS over the TCP stream.")?;
+    Ok(Logger {
+        formatter,
+        backend: LoggerBackend::Tls(BufWriter::new(stream)),
+    })
 }
 
 pub struct BasicLogger {
@@ -347,11 +379,11 @@ impl Log for BasicLogger {
         let message = format!("{}", record.args());
         let mut logger = self.logger.lock().unwrap();
         match record.level() {
-            Level::Error => logger.err(message),
-            Level::Warn => logger.warning(message),
-            Level::Info => logger.info(message),
-            Level::Debug => logger.debug(message),
-            Level::Trace => logger.debug(message),
+            Level::Error => logger.err(&message),
+            Level::Warn => logger.warning(&message),
+            Level::Info => logger.info(&message),
+            Level::Debug => logger.debug(&message),
+            Level::Trace => logger.debug(&message),
         };
     }
 
