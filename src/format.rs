@@ -150,7 +150,12 @@ impl Formatter5424 {
             for (id, params) in &data {
                 res = res + "[" + id;
                 for (name, value) in params {
-                    res = res + " " + name + "=\"" + value + "\"";
+                    res = res
+                        + " "
+                        + name
+                        + "=\""
+                        + &escape_structure_data_param_value(&value)
+                        + "\"";
                 }
                 res += "]";
             }
@@ -169,11 +174,19 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
     ) -> Result<()> {
         let (message_id, data, message) = log_message;
 
+        // Guard against sub-second precision over 6 digits per rfc5424 section 6
+        let timestamp = time::OffsetDateTime::now_utc();
+        // SAFETY: timestamp range is enforced, so this will never fail
+        let timestamp = timestamp
+            // Removing significant figures beyond 6 digits (nanoseconds to microseconds)
+            .replace_nanosecond(timestamp.microsecond())
+            .unwrap();
+
         write!(
             w,
             "<{}>1 {} {} {} {} {} {} {}", // v1
             encode_priority(severity, self.facility),
-            time::OffsetDateTime::now_utc()
+            timestamp
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap(),
             self.hostname
@@ -221,6 +234,13 @@ impl Default for Formatter5424 {
     }
 }
 
+fn escape_structure_data_param_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace(']', "\\]")
+}
+
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
 }
@@ -237,42 +257,66 @@ fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::Indeter
     time::OffsetDateTime::now_local()
 }
 
-#[test]
-fn test_formatter3164_defaults() {
-    let d = Formatter3164::default();
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
-    assert!(match d.facility {
-        Facility::LOG_USER => true,
-        _ => false,
-    });
+    #[test]
+    fn backslash_is_escaped() {
+        let string = "\\";
+        let value = escape_structure_data_param_value(string);
+        assert_eq!(value, "\\\\");
+    }
+    #[test]
+    fn quote_is_escaped() {
+        let string = "foo\"bar";
+        let value = escape_structure_data_param_value(string);
+        assert_eq!(value, "foo\\\"bar");
+    }
+    #[test]
+    fn end_bracket_is_escaped() {
+        let string = "]";
+        let value = escape_structure_data_param_value(string);
+        assert_eq!(value, "\\]");
+    }
 
-    assert!(match &d.hostname {
-        Some(hostname) => !hostname.is_empty(),
-        None => false,
-    });
+    #[test]
+    fn test_formatter3164_defaults() {
+        let d = Formatter3164::default();
 
-    assert!(!d.process.is_empty());
+        // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+        assert!(match d.facility {
+            Facility::LOG_USER => true,
+            _ => false,
+        });
 
-    // Can't really make any assertions about the pid.
-}
+        assert!(match &d.hostname {
+            Some(hostname) => !hostname.is_empty(),
+            None => false,
+        });
 
-#[test]
-fn test_formatter5424_defaults() {
-    let d = Formatter5424::default();
+        assert!(!d.process.is_empty());
 
-    // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
-    assert!(match d.facility {
-        Facility::LOG_USER => true,
-        _ => false,
-    });
+        // Can't really make any assertions about the pid.
+    }
 
-    assert!(match &d.hostname {
-        Some(hostname) => !hostname.is_empty(),
-        None => false,
-    });
+    #[test]
+    fn test_formatter5424_defaults() {
+        let d = Formatter5424::default();
 
-    assert!(!d.process.is_empty());
+        // `Facility` doesn't implement `PartialEq`, so we use a `match` instead.
+        assert!(match d.facility {
+            Facility::LOG_USER => true,
+            _ => false,
+        });
 
-    // Can't really make any assertions about the pid.
+        assert!(match &d.hostname {
+            Some(hostname) => !hostname.is_empty(),
+            None => false,
+        });
+
+        assert!(!d.process.is_empty());
+
+        // Can't really make any assertions about the pid.
+    }
 }
