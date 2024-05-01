@@ -178,8 +178,8 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
         let timestamp = time::OffsetDateTime::now_utc();
         // SAFETY: timestamp range is enforced, so this will never fail
         let timestamp = timestamp
-            // Removing significant figures beyond 6 digits (nanoseconds to microseconds)
-            .replace_nanosecond(timestamp.microsecond())
+            // Removing significant figures beyond 6 digits
+            .replace_nanosecond(timestamp.nanosecond() / 1000 * 1000)
             .unwrap();
 
         write!(
