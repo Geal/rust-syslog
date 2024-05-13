@@ -137,6 +137,7 @@ pub type StructuredData = HashMap<String, HashMap<String, String>>;
 pub struct Formatter5424 {
     pub facility: Facility,
     pub hostname: Option<String>,
+    /// Called APP-NAME in RFC5424
     pub process: String,
     pub pid: u32,
 }
@@ -165,14 +166,23 @@ impl Formatter5424 {
     }
 }
 
-impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
+impl<T: Display> LogFormat<(Option<String>, StructuredData, T)> for Formatter5424 {
     fn format<W: Write>(
         &self,
         w: &mut W,
         severity: Severity,
-        log_message: (u32, StructuredData, T),
+        log_message: (Option<String>, StructuredData, T),
     ) -> Result<()> {
         let (message_id, data, message) = log_message;
+
+        // XXX: seems a lot of effort per-call, we could do this via a wrapper type instead
+        // So the caller could do this once and pass it in
+        let message_id = message_id
+            .unwrap_or_else(|| NILL_VALUE.to_owned())
+            .chars()
+            .filter(is_us_print_ascii)
+            .take(32)
+            .collect::<String>();
 
         // Guard against sub-second precision over 6 digits per rfc5424 section 6
         let timestamp = time::OffsetDateTime::now_utc();
@@ -200,6 +210,27 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
             message
         )
         .chain_err(|| ErrorKind::Format)
+    }
+}
+
+impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
+    fn format<W: Write>(
+        &self,
+        w: &mut W,
+        severity: Severity,
+        log_message: (u32, StructuredData, T),
+    ) -> Result<()> {
+        // Slight bit more overhead, but we can reuse the other implementation
+        LogFormat::<(Option<String>, StructuredData, T)>::format(
+            self,
+            w,
+            severity,
+            (
+                Some(log_message.0.to_string()),
+                log_message.1,
+                log_message.2,
+            ),
+        )
     }
 }
 
@@ -241,9 +272,19 @@ fn escape_structure_data_param_value(value: &str) -> String {
         .replace(']', "\\]")
 }
 
+/// Checks if a character is printable US ASCII
+/// Defined by rfc5424 as between 33 and 126
+fn is_us_print_ascii(c: &char) -> bool {
+    33 <= *c as u32 && *c as u32 <= 126
+}
+
 fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
 }
+
+/// The value to use when a field is not present
+/// Defined by rfc5424 as a single hyphen
+const NILL_VALUE: &str = "-";
 
 #[cfg(unix)]
 // On unix platforms, time::OffsetDateTime::now_local always returns an error so use UTC instead
@@ -278,6 +319,34 @@ mod test {
         let string = "]";
         let value = escape_structure_data_param_value(string);
         assert_eq!(value, "\\]");
+    }
+
+    #[test]
+    fn space_is_out_of_us_printable_ascii() {
+        assert!(!is_us_print_ascii(&' '));
+    }
+
+    #[test]
+    fn ascii_chars_are_in_range() {
+        for i in 33..=126 {
+            assert!(is_us_print_ascii(&char::from(i)));
+        }
+        for i in 'a'..'z' {
+            assert!(is_us_print_ascii(&i));
+        }
+        for i in 'A'..'Z' {
+            assert!(is_us_print_ascii(&i));
+        }
+    }
+
+    #[test]
+    fn ascii_thirty_two_out_of_range() {
+        assert!(!is_us_print_ascii(&char::from(32)));
+    }
+
+    #[test]
+    fn ascii_one_hundred_twenty_seven_out_of_range() {
+        assert!(!is_us_print_ascii(&char::from(127)));
     }
 
     #[test]
