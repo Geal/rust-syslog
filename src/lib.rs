@@ -515,22 +515,25 @@ pub fn init(
 ) -> Result<()> {
     let (process_name, pid) = get_process_info()?;
     let process = application_name.map(From::from).unwrap_or(process_name);
-    let formatter = Formatter3164 {
+    let mut formatter = Formatter3164 {
         facility,
-        hostname: get_hostname().ok(),
+        hostname: None,
         process,
         pid,
     };
 
-    let backend = unix(formatter.clone())
-        .map(|logger: Logger<LoggerBackend, Formatter3164>| logger.backend)
-        .or_else(|_| {
-            TcpStream::connect(("127.0.0.1", 601)).map(|s| LoggerBackend::Tcp(BufWriter::new(s)))
-        })
-        .or_else(|_| {
+    let backend = if let Ok(logger) = unix(formatter.clone()) {
+        logger.backend
+    } else {
+        formatter.hostname = get_hostname().ok();
+        if let Ok(tcp_stream) = TcpStream::connect(("127.0.0.1", 601)) {
+            LoggerBackend::Tcp(BufWriter::new(tcp_stream))
+        } else {
             let udp_addr = "127.0.0.1:514".parse().unwrap();
-            UdpSocket::bind(("127.0.0.1", 0)).map(|s| LoggerBackend::Udp(s, udp_addr))
-        })?;
+            let udp_stream = UdpSocket::bind(("127.0.0.1", 0))?;
+            LoggerBackend::Udp(udp_stream, udp_addr)
+        }
+    };
     log::set_boxed_logger(Box::new(BasicLogger::new(Logger { formatter, backend })))
         .chain_err(|| ErrorKind::Initialization)?;
 

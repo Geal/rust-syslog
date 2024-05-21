@@ -1,7 +1,7 @@
 [package]
 
 name = "syslog-tls"
-version = "7.1.0"
+version = "7.1.1"
 authors = [ "jonathan.brouwer@technolution.nl", "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"
 license = "MIT"
