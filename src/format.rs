@@ -187,13 +187,9 @@ impl LogFormat<SyslogMessage> for Formatter5424 {
         &self,
         w: &mut W,
         severity: Severity,
-        time: OffsetDateTime,
+        timestamp: OffsetDateTime,
         message: &SyslogMessage,
     ) -> Result<()> {
-        let (message_id, data, message) = log_message;
-
-        // Guard against sub-second precision over 6 digits per rfc5424 section 6
-        let timestamp = time::OffsetDateTime::now_utc();
         // SAFETY: timestamp range is enforced, so this will never fail
         let timestamp = timestamp
             // Removing significant figures beyond 6 digits

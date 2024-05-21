@@ -5,8 +5,8 @@ version = "7.1.1"
 authors = [ "jonathan.brouwer@technolution.nl", "contact@geoffroycouprie.com" ]
 description = "Send log messages to syslog"
 license = "MIT"
-repository = "https://github.com/Geal/rust-syslog"
-documentation = "https://docs.rs/syslog"
+repository = "https://github.com/JonathanBrouwer/rust-syslog"
+documentation = "https://docs.rs/syslog-tls"
 keywords = ["syslog", "logs", "logging"]
 edition = "2021"
 
