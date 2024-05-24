@@ -1,13 +1,12 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::io::Write;
-use time;
+use time::{self, OffsetDateTime};
 
-use errors::*;
-use facility::Facility;
-use get_hostname;
-use get_process_info;
-use Priority;
+use crate::errors::*;
+use crate::facility::Facility;
+use crate::get_hostname;
+use crate::get_process_info;
+use crate::Priority;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]
@@ -23,37 +22,47 @@ pub enum Severity {
 }
 
 pub trait LogFormat<T> {
-    fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()>;
+    fn format<W: Write>(&self, w: &mut W, severity: Severity, message: &T) -> Result<()> {
+        self.format_at(w, severity, now_local().unwrap(), message)
+    }
 
-    fn emerg<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn format_at<W: Write>(
+        &self,
+        w: &mut W,
+        severity: Severity,
+        time: OffsetDateTime,
+        message: &T,
+    ) -> Result<()>;
+
+    fn emerg<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_EMERG, message)
     }
 
-    fn alert<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn alert<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_ALERT, message)
     }
 
-    fn crit<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn crit<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_CRIT, message)
     }
 
-    fn err<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn err<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_ERR, message)
     }
 
-    fn warning<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn warning<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_WARNING, message)
     }
 
-    fn notice<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn notice<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_NOTICE, message)
     }
 
-    fn info<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn info<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_INFO, message)
     }
 
-    fn debug<W: Write>(&mut self, w: &mut W, message: T) -> Result<()> {
+    fn debug<W: Write>(&mut self, w: &mut W, message: &T) -> Result<()> {
         self.format(w, Severity::LOG_DEBUG, message)
     }
 }
@@ -67,19 +76,23 @@ pub struct Formatter3164 {
 }
 
 impl<T: Display> LogFormat<T> for Formatter3164 {
-    fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()> {
+    fn format_at<W: Write>(
+        &self,
+        w: &mut W,
+        severity: Severity,
+        time: OffsetDateTime,
+        message: &T,
+    ) -> Result<()> {
         let format =
             time::format_description::parse("[month repr:short] [day] [hour]:[minute]:[second]")
                 .unwrap();
 
         if let Some(ref hostname) = self.hostname {
-            write!(
+            writeln!(
                 w,
                 "<{}>{} {} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                now_local()
-                    .map(|timestamp| timestamp.format(&format).unwrap())
-                    .unwrap(),
+                time.format(&format).unwrap(),
                 hostname,
                 self.process,
                 self.pid,
@@ -87,13 +100,11 @@ impl<T: Display> LogFormat<T> for Formatter3164 {
             )
             .chain_err(|| ErrorKind::Format)
         } else {
-            write!(
+            writeln!(
                 w,
                 "<{}>{} {}[{}]: {}",
                 encode_priority(severity, self.facility),
-                now_local()
-                    .map(|timestamp| timestamp.format(&format).unwrap())
-                    .unwrap(),
+                time.format(&format).unwrap(),
                 self.process,
                 self.pid,
                 message
@@ -131,7 +142,13 @@ impl Default for Formatter3164 {
 }
 
 /// RFC 5424 structured data
-pub type StructuredData = HashMap<String, HashMap<String, String>>;
+pub type StructuredData = Vec<(String, Vec<(String, String)>)>;
+
+pub struct SyslogMessage {
+    pub message_level: u32,
+    pub structured: StructuredData,
+    pub message: String,
+}
 
 #[derive(Clone, Debug)]
 pub struct Formatter5424 {
@@ -142,12 +159,12 @@ pub struct Formatter5424 {
 }
 
 impl Formatter5424 {
-    pub fn format_5424_structured_data(&self, data: StructuredData) -> String {
+    pub fn format_5424_structured_data(&self, data: &StructuredData) -> String {
         if data.is_empty() {
             "-".to_string()
         } else {
             let mut res = String::new();
-            for (id, params) in &data {
+            for (id, params) in data {
                 res = res + "[" + id;
                 for (name, value) in params {
                     res = res
@@ -165,17 +182,14 @@ impl Formatter5424 {
     }
 }
 
-impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
-    fn format<W: Write>(
+impl LogFormat<SyslogMessage> for Formatter5424 {
+    fn format_at<W: Write>(
         &self,
         w: &mut W,
         severity: Severity,
-        log_message: (u32, StructuredData, T),
+        timestamp: OffsetDateTime,
+        message: &SyslogMessage,
     ) -> Result<()> {
-        let (message_id, data, message) = log_message;
-
-        // Guard against sub-second precision over 6 digits per rfc5424 section 6
-        let timestamp = time::OffsetDateTime::now_utc();
         // SAFETY: timestamp range is enforced, so this will never fail
         let timestamp = timestamp
             // Removing significant figures beyond 6 digits
@@ -184,22 +198,28 @@ impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
 
         write!(
             w,
-            "<{}>1 {} {} {} {} {} {} {}", // v1
+            "<{}>1 {} {} {} {} {} {} {}{}", // v1
             encode_priority(severity, self.facility),
             timestamp
                 .format(&time::format_description::well_known::Rfc3339)
-                .unwrap(),
+                .expect("Can format time"),
             self.hostname
                 .as_ref()
                 .map(|x| &x[..])
                 .unwrap_or("localhost"),
             self.process,
             self.pid,
-            message_id,
-            self.format_5424_structured_data(data),
-            message
+            message.message_level,
+            self.format_5424_structured_data(&message.structured),
+            message.message,
+            // Append new-line at the end of message if not present, mandatory for RFC5424
+            if message.message.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            },
         )
-        .chain_err(|| ErrorKind::Format)
+        .chain_err(|| "Failed to write syslog message")
     }
 }
 
