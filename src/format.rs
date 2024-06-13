@@ -165,17 +165,20 @@ impl Formatter5424 {
     }
 }
 
-impl<T: Display> LogFormat<(u32, StructuredData, T)> for Formatter5424 {
+impl<T: Display> LogFormat<(Option<i128>, String, StructuredData, T)> for Formatter5424 {
     fn format<W: Write>(
         &self,
         w: &mut W,
         severity: Severity,
-        log_message: (u32, StructuredData, T),
+        log_message: (Option<i128>, String, StructuredData, T),
     ) -> Result<()> {
-        let (message_id, data, message) = log_message;
+        let (maybe_timestamp, message_id, data, message) = log_message;
 
-        // Guard against sub-second precision over 6 digits per rfc5424 section 6
-        let timestamp = time::OffsetDateTime::now_utc();
+        let timestamp = maybe_timestamp
+            // Guard against sub-second precision over 6 digits per rfc5424 section 6
+            .map(|t| time::OffsetDateTime::from_unix_timestamp_nanos(t).unwrap())
+            .unwrap_or(time::OffsetDateTime::now_utc());
+
         // SAFETY: timestamp range is enforced, so this will never fail
         let timestamp = timestamp
             // Removing significant figures beyond 6 digits
