@@ -343,16 +343,18 @@ impl Log for BasicLogger {
     }
 
     fn log(&self, record: &Record) {
-        //FIXME: temporary patch to compile
-        let message = format!("{}", record.args());
-        let mut logger = self.logger.lock().unwrap();
-        match record.level() {
-            Level::Error => logger.err(message),
-            Level::Warn => logger.warning(message),
-            Level::Info => logger.info(message),
-            Level::Debug => logger.debug(message),
-            Level::Trace => logger.debug(message),
-        };
+        if self.enabled(record.metadata()) {
+            //FIXME: temporary patch to compile
+            let message = format!("{}", record.args());
+            let mut logger = self.logger.lock().unwrap();
+            match record.level() {
+                Level::Error => logger.err(message),
+                Level::Warn => logger.warning(message),
+                Level::Info => logger.info(message),
+                Level::Debug => logger.debug(message),
+                Level::Trace => logger.debug(message),
+            };
+        }
     }
 
     fn flush(&self) {
