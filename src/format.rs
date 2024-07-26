@@ -150,12 +150,8 @@ impl Formatter5424 {
             for (id, params) in &data {
                 res = res + "[" + id;
                 for (name, value) in params {
-                    res = res
-                        + " "
-                        + name
-                        + "=\""
-                        + &escape_structure_data_param_value(&value)
-                        + "\"";
+                    res =
+                        res + " " + name + "=\"" + &escape_structure_data_param_value(value) + "\"";
                 }
                 res += "]";
             }
