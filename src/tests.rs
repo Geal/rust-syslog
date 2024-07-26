@@ -147,8 +147,9 @@ fn test_udp() {
     let barrier = Arc::new(Barrier::new(2));
     let b = barrier.clone();
     std::thread::spawn(move || {
+        let mut locked: std::sync::MutexGuard<String> = s.lock().unwrap();
+
         b.wait();
-        let mut locked = s.lock().unwrap();
         let mut buf = [0u8; 1024];
 
         let mut counter = 0;
