@@ -295,10 +295,10 @@ fn unix_connect<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<Logge
 }
 
 /// returns a UDP logger connecting `local` and `server`
-pub fn udp<T: ToSocketAddrs, F>(
+pub fn udp<T: ToSocketAddrs, U: ToSocketAddrs, F>(
     formatter: F,
     local: T,
-    server: T,
+    server: U,
 ) -> Result<Logger<LoggerBackend, F>> {
     server
         .to_socket_addrs()

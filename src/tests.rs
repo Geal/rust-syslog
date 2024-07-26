@@ -167,7 +167,7 @@ fn test_udp() {
     });
 
     let mut writer: Logger<LoggerBackend, Formatter5424> =
-        udp(formatter, "127.0.0.1:0", &local_address.to_string()).unwrap();
+        udp(formatter, "127.0.0.1:0", local_address).unwrap();
     barrier.wait();
 
     writer.emerg((1, BTreeMap::new(), "a1")).unwrap();
