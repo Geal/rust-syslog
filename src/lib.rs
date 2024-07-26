@@ -50,11 +50,7 @@
 //!         .map(|()| log::set_max_level(LevelFilter::Info));
 //!
 //! info!("hello world");
-//!
-#![crate_type = "lib"]
-
-#[macro_use]
-extern crate error_chain;
+//! ```
 extern crate log;
 extern crate time;
 
@@ -243,7 +239,7 @@ pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
         .find_map(|path| {
             unix_connect(formatter.clone(), *path).map_or_else(
                 |e| {
-                    if let ErrorKind::Io(ref io_err) = e.kind() {
+                    if let Error::Io(ref io_err) = e {
                         if io_err.kind() == io::ErrorKind::NotFound {
                             None // not considered an error, try the next path
                         } else {
@@ -257,8 +253,8 @@ pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
             )
         })
         .transpose()
-        .chain_err(|| ErrorKind::Initialization)?
-        .ok_or_else(|| Error::from_kind(ErrorKind::Initialization))
+        .map_err(|e| Error::Initialization(Box::new(e)))?
+        .ok_or_else(|| Error::Initialization("unix socket paths not found".into()))
 }
 
 #[cfg(not(unix))]
@@ -269,7 +265,7 @@ pub fn unix<F: Clone>(_formatter: F) -> Result<Logger<LoggerBackend, F>> {
 /// Returns a Logger using unix socket to target local syslog at user provided path
 #[cfg(unix)]
 pub fn unix_custom<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<LoggerBackend, F>> {
-    unix_connect(formatter, path).chain_err(|| ErrorKind::Initialization)
+    unix_connect(formatter, path).map_err(|e| Error::Initialization(Box::new(e)))
 }
 
 #[cfg(not(unix))]
@@ -304,15 +300,15 @@ pub fn udp<T: ToSocketAddrs, F>(
 ) -> Result<Logger<LoggerBackend, F>> {
     server
         .to_socket_addrs()
-        .chain_err(|| ErrorKind::Initialization)
+        .map_err(|e| Error::Initialization(Box::new(e)))
         .and_then(|mut server_addr_opt| {
             server_addr_opt
                 .next()
-                .chain_err(|| ErrorKind::Initialization)
+                .ok_or_else(|| Error::Initialization("no server address".into()))
         })
         .and_then(|server_addr| {
             UdpSocket::bind(local)
-                .chain_err(|| ErrorKind::Initialization)
+                .map_err(|e| Error::Initialization(Box::new(e)))
                 .map(|socket| Logger {
                     formatter,
                     backend: LoggerBackend::Udp(socket, server_addr),
@@ -323,7 +319,7 @@ pub fn udp<T: ToSocketAddrs, F>(
 /// returns a TCP logger connecting `local` and `server`
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
-        .chain_err(|| ErrorKind::Initialization)
+        .map_err(|e| Error::Initialization(e.into()))
         .map(|socket| Logger {
             formatter,
             backend: LoggerBackend::Tcp(BufWriter::new(socket)),
@@ -380,7 +376,7 @@ pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> 
     };
     unix(formatter).and_then(|logger| {
         log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
-            .chain_err(|| ErrorKind::Initialization)
+            .map_err(|e| Error::Initialization(Box::new(e)))
     })?;
 
     log::set_max_level(log_level);
@@ -408,7 +404,7 @@ pub fn init_unix_custom<P: AsRef<Path>>(
     };
     unix_custom(formatter, path).and_then(|logger| {
         log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
-            .chain_err(|| ErrorKind::Initialization)
+            .map_err(|e| Error::Initialization(Box::new(e)))
     })?;
 
     log::set_max_level(log_level);
@@ -441,7 +437,7 @@ pub fn init_udp<T: ToSocketAddrs>(
     };
     udp(formatter, local, server).and_then(|logger| {
         log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
-            .chain_err(|| ErrorKind::Initialization)
+            .map_err(|e| Error::Initialization(Box::new(e)))
     })?;
 
     log::set_max_level(log_level);
@@ -465,7 +461,7 @@ pub fn init_tcp<T: ToSocketAddrs>(
 
     tcp(formatter, server).and_then(|logger| {
         log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
-            .chain_err(|| ErrorKind::Initialization)
+            .map_err(|e| Error::Initialization(Box::new(e)))
     })?;
 
     log::set_max_level(log_level);
@@ -511,7 +507,7 @@ pub fn init(
         }
     };
     log::set_boxed_logger(Box::new(BasicLogger::new(Logger { formatter, backend })))
-        .chain_err(|| ErrorKind::Initialization)?;
+        .map_err(|e| Error::Initialization(Box::new(e)))?;
 
     log::set_max_level(log_level);
     Ok(())
@@ -519,12 +515,12 @@ pub fn init(
 
 fn get_process_info() -> Result<(String, u32)> {
     env::current_exe()
-        .chain_err(|| ErrorKind::Initialization)
+        .map_err(|e| Error::Initialization(Box::new(e)))
         .and_then(|path| {
             path.file_name()
                 .and_then(|os_name| os_name.to_str())
                 .map(|name| name.to_string())
-                .chain_err(|| ErrorKind::Initialization)
+                .ok_or_else(|| Error::Initialization("process name not found".into()))
         })
         .map(|name| (name, process::id()))
 }

@@ -13,5 +13,4 @@ keywords = ["syslog", "logs", "logging"]
 hostname    = "0.4"
 time        = { version = "0.3.5", features = ["local-offset", "formatting"] }
 log         = { version = "0.4.8", features = [ "std" ] }
-error-chain = { version = "0.12.2", default-features = false }
 libc = "0.2.112"
