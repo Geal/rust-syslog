@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::io::Write;
 use time;
@@ -131,7 +131,7 @@ impl Default for Formatter3164 {
 }
 
 /// RFC 5424 structured data
-pub type StructuredData = HashMap<String, HashMap<String, String>>;
+pub type StructuredData = BTreeMap<String, BTreeMap<String, String>>;
 
 #[derive(Clone, Debug)]
 pub struct Formatter5424 {
