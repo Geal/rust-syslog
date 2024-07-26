@@ -30,6 +30,7 @@ fn test_unix_socket() {
         b.wait();
         let mut locked = s.lock().unwrap();
         while let Ok(sz) = stream.read_to_string(&mut locked) {
+            println!("string is now(sz={sz}): {locked}");
             if sz == 0 {
                 break;
             }
@@ -85,6 +86,8 @@ fn test_tcp() {
         b.wait();
         let mut locked = s.lock().unwrap();
         while let Ok(sz) = stream.read_to_string(&mut locked) {
+            println!("string is now(sz={sz}): {locked}");
+
             if sz == 0 {
                 break;
             }
