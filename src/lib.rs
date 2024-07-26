@@ -69,10 +69,12 @@ use log::{Level, Log, Metadata, Record};
 mod errors;
 mod facility;
 mod format;
+#[cfg(test)]
+mod tests;
+
 pub use errors::*;
 pub use facility::Facility;
 pub use format::Severity;
-
 pub use format::{Formatter3164, Formatter5424, LogFormat};
 
 pub type Priority = u8;
