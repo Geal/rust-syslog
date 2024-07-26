@@ -3,7 +3,11 @@
 [![Build Status](https://travis-ci.org/Geal/rust-syslog.png?branch=master)](https://travis-ci.org/Geal/rust-syslog)
 [![Coverage Status](https://coveralls.io/repos/Geal/rust-syslog/badge.svg?branch=master&service=github)](https://coveralls.io/github/Geal/rust-syslog?branch=master)
 
-A small library to write to local syslog.
+[![Build Status](https://github.com/Geal/rust-syslog/actions/workflows/rut.yml/badge.svg)](https://github.com/Geal/rust-syslog/actions/workflows/rust.yml)
+![Codecov](https://img.shields.io/codecov/c/github/geal/rust-syslog)
+[![crates.io Version](https://img.shields.io/crates/v/syslog.svg)](https://crates.io/crates/syslog)
+
+A small library to send syslog messages to unix sockets, TCP or UDP.
 
 ## Installation
 
