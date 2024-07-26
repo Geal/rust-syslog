@@ -3,7 +3,7 @@
 name = "syslog"
 version = "6.1.1"
 authors = [ "contact@geoffroycouprie.com" ]
-description = "Send log messages to syslog"
+description = "Syslog message formatter and writer, supporting unix sockets, UDP and TCP exporters"
 license = "MIT"
 repository = "https://github.com/Geal/rust-syslog"
 documentation = "https://docs.rs/syslog"
