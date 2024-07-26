@@ -28,8 +28,11 @@ fn test_unix_socket() {
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
         b.wait();
-        while let Ok(mut str) = s.lock() {
-            stream.read_to_string(&mut str).unwrap();
+        let mut locked = s.lock().unwrap();
+        while let Ok(sz) = stream.read_to_string(&mut locked) {
+            if sz == 0 {
+                break;
+            }
         }
     });
 
@@ -80,8 +83,11 @@ fn test_tcp() {
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
         b.wait();
-        while let Ok(mut str) = s.lock() {
-            stream.read_to_string(&mut str).unwrap();
+        let mut locked = s.lock().unwrap();
+        while let Ok(sz) = stream.read_to_string(&mut locked) {
+            if sz == 0 {
+                break;
+            }
         }
     });
 
