@@ -1,6 +1,6 @@
 extern crate syslog;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syslog::{Facility, Formatter5424};
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
         Err(e) => println!("impossible to connect to syslog: {:?}", e),
         Ok(mut writer) => {
             writer
-                .err((1, HashMap::new(), "hello world"))
+                .err((1, BTreeMap::new(), "hello world"))
                 .expect("could not write error message");
         }
     }
