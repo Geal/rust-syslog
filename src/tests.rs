@@ -27,8 +27,9 @@ fn test_unix_socket() {
     let b = barrier.clone();
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
-        b.wait();
         let mut locked = s.lock().unwrap();
+
+        b.wait();
         while let Ok(sz) = stream.read_to_string(&mut locked) {
             println!("string is now(sz={sz}): {locked}");
             if sz == 0 {
@@ -83,8 +84,9 @@ fn test_tcp() {
     let b = barrier.clone();
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
-        b.wait();
         let mut locked = s.lock().unwrap();
+
+        b.wait();
         while let Ok(sz) = stream.read_to_string(&mut locked) {
             println!("string is now(sz={sz}): {locked}");
 
