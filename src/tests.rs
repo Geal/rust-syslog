@@ -23,8 +23,11 @@ fn test_unix_socket() {
     let str = Arc::new(Mutex::new(String::new()));
     let s = str.clone();
 
+    let barrier = Arc::new(Barrier::new(2));
+    let b = barrier.clone();
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
+        b.wait();
         loop {
             let mut str = s.lock().unwrap();
             stream.read_to_string(&mut str).unwrap();
@@ -32,6 +35,7 @@ fn test_unix_socket() {
     });
 
     let mut writer: Logger<LoggerBackend, Formatter3164> = unix_custom(formatter, &path).unwrap();
+    barrier.wait();
     writer.emerg("a1").unwrap();
     writer.alert("a2").unwrap();
     writer.crit("a3").unwrap();
@@ -72,7 +76,6 @@ fn test_tcp() {
     let str = Arc::new(Mutex::new(String::new()));
     let s = str.clone();
 
-    // set up a thread barrier
     let barrier = Arc::new(Barrier::new(2));
     let b = barrier.clone();
     std::thread::spawn(move || {
