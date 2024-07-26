@@ -1,5 +1,5 @@
 use io::Read;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Barrier};
 
 #[test]
 fn test_unix_socket() {
@@ -72,14 +72,19 @@ fn test_tcp() {
     let str = Arc::new(Mutex::new(String::new()));
     let s = str.clone();
 
+    // set up a thread barrier
+    let barrier = Arc::new(Barrier::new(2));
+    let b = barrier.clone();
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
+        b.wait();
         while let Ok(mut str) = s.lock() {
             stream.read_to_string(&mut str).unwrap();
         }
     });
 
     let mut writer: Logger<LoggerBackend, Formatter5424> = tcp(formatter, local_address).unwrap();
+    barrier.wait();
 
     writer.emerg((1, BTreeMap::new(), "a1")).unwrap();
     let mut data = BTreeMap::new();
