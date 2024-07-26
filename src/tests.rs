@@ -13,12 +13,12 @@ fn test_unix_socket() {
         pid: 0,
     };
 
+    let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+
     let err = unix_custom(formatter.clone(), &path)
         .map(|_| ())
         .unwrap_err();
     println!("expected initialization error: {err:?}");
-
-    let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
 
     let str = Arc::new(Mutex::new(String::new()));
     let s = str.clone();
