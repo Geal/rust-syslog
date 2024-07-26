@@ -81,6 +81,8 @@ pub use format::{Formatter3164, Formatter5424, LogFormat};
 
 pub type Priority = u8;
 
+const UNIX_SOCK_PATHS: [&str; 3] = ["/dev/log", "/var/run/syslog", "/var/run/log"];
+
 /// Main logging structure
 pub struct Logger<Backend: Write, Formatter> {
     pub formatter: Formatter,
@@ -168,18 +170,18 @@ impl Write for LoggerBackend {
     fn write(&mut self, message: &[u8]) -> io::Result<usize> {
         match *self {
             #[cfg(unix)]
-            LoggerBackend::Unix(ref dgram) => dgram.send(&message[..]),
+            LoggerBackend::Unix(ref dgram) => dgram.send(message),
             #[cfg(unix)]
             LoggerBackend::UnixStream(ref mut socket) => {
                 let null = [0; 1];
                 socket
-                    .write(&message[..])
+                    .write(message)
                     .and_then(|sz| socket.write(&null).map(|_| sz))
                     .and_then(|sz| socket.flush().map(|_| sz))
             }
-            LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(&message[..], addr),
+            LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(message, addr),
             LoggerBackend::Tcp(ref mut socket) => socket
-                .write(&message[..])
+                .write(message)
                 .and_then(|sz| socket.flush().map(|_| sz)),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
@@ -236,16 +238,27 @@ impl Write for LoggerBackend {
 /// Returns a Logger using unix socket to target local syslog ( using /dev/log or /var/run/syslog)
 #[cfg(unix)]
 pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
-    unix_connect(formatter.clone(), "/dev/log")
-        .or_else(|e| {
-            if let ErrorKind::Io(ref io_err) = *e.kind() {
-                if io_err.kind() == io::ErrorKind::NotFound {
-                    return unix_connect(formatter, "/var/run/syslog");
-                }
-            }
-            Err(e)
+    UNIX_SOCK_PATHS
+        .iter()
+        .find_map(|path| {
+            unix_connect(formatter.clone(), *path).map_or_else(
+                |e| {
+                    if let ErrorKind::Io(ref io_err) = e.kind() {
+                        if io_err.kind() == io::ErrorKind::NotFound {
+                            None // not considered an error, try the next path
+                        } else {
+                            Some(Err(e))
+                        }
+                    } else {
+                        Some(Err(e))
+                    }
+                },
+                |logger| Some(Ok(logger)),
+            )
         })
-        .chain_err(|| ErrorKind::Initialization)
+        .transpose()
+        .chain_err(|| ErrorKind::Initialization)?
+        .ok_or_else(|| Error::from_kind(ErrorKind::Initialization))
 }
 
 #[cfg(not(unix))]
@@ -300,11 +313,9 @@ pub fn udp<T: ToSocketAddrs, F>(
         .and_then(|server_addr| {
             UdpSocket::bind(local)
                 .chain_err(|| ErrorKind::Initialization)
-                .and_then(|socket| {
-                    Ok(Logger {
-                        formatter,
-                        backend: LoggerBackend::Udp(socket, server_addr),
-                    })
+                .map(|socket| Logger {
+                    formatter,
+                    backend: LoggerBackend::Udp(socket, server_addr),
                 })
         })
 }
@@ -313,11 +324,9 @@ pub fn udp<T: ToSocketAddrs, F>(
 pub fn tcp<T: ToSocketAddrs, F>(formatter: F, server: T) -> Result<Logger<LoggerBackend, F>> {
     TcpStream::connect(server)
         .chain_err(|| ErrorKind::Initialization)
-        .and_then(|socket| {
-            Ok(Logger {
-                formatter,
-                backend: LoggerBackend::Tcp(BufWriter::new(socket)),
-            })
+        .map(|socket| Logger {
+            formatter,
+            backend: LoggerBackend::Tcp(BufWriter::new(socket)),
         })
 }
 
@@ -340,16 +349,18 @@ impl Log for BasicLogger {
     }
 
     fn log(&self, record: &Record) {
-        //FIXME: temporary patch to compile
-        let message = format!("{}", record.args());
-        let mut logger = self.logger.lock().unwrap();
-        match record.level() {
-            Level::Error => logger.err(message),
-            Level::Warn => logger.warning(message),
-            Level::Info => logger.info(message),
-            Level::Debug => logger.debug(message),
-            Level::Trace => logger.debug(message),
-        };
+        if self.enabled(record.metadata()) {
+            //FIXME: temporary patch to compile
+            let message = format!("{}", record.args());
+            let mut logger = self.logger.lock().unwrap();
+            match record.level() {
+                Level::Error => logger.err(message),
+                Level::Warn => logger.warning(message),
+                Level::Info => logger.info(message),
+                Level::Debug => logger.debug(message),
+                Level::Trace => logger.debug(message),
+            };
+        }
     }
 
     fn flush(&self) {
@@ -480,22 +491,25 @@ pub fn init(
 ) -> Result<()> {
     let (process_name, pid) = get_process_info()?;
     let process = application_name.map(From::from).unwrap_or(process_name);
-    let formatter = Formatter3164 {
+    let mut formatter = Formatter3164 {
         facility,
-        hostname: get_hostname().ok(),
+        hostname: None,
         process,
         pid,
     };
 
-    let backend = unix(formatter.clone())
-        .map(|logger: Logger<LoggerBackend, Formatter3164>| logger.backend)
-        .or_else(|_| {
-            TcpStream::connect(("127.0.0.1", 601)).map(|s| LoggerBackend::Tcp(BufWriter::new(s)))
-        })
-        .or_else(|_| {
+    let backend = if let Ok(logger) = unix(formatter.clone()) {
+        logger.backend
+    } else {
+        formatter.hostname = get_hostname().ok();
+        if let Ok(tcp_stream) = TcpStream::connect(("127.0.0.1", 601)) {
+            LoggerBackend::Tcp(BufWriter::new(tcp_stream))
+        } else {
             let udp_addr = "127.0.0.1:514".parse().unwrap();
-            UdpSocket::bind(("127.0.0.1", 0)).map(|s| LoggerBackend::Udp(s, udp_addr))
-        })?;
+            let udp_stream = UdpSocket::bind(("127.0.0.1", 0))?;
+            LoggerBackend::Udp(udp_stream, udp_addr)
+        }
+    };
     log::set_boxed_logger(Box::new(BasicLogger::new(Logger { formatter, backend })))
         .chain_err(|| ErrorKind::Initialization)?;
 
