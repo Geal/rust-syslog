@@ -177,9 +177,12 @@ impl Write for LoggerBackend {
                 socket
                     .write(message)
                     .and_then(|sz| socket.write(&null).map(|_| sz))
+                    .and_then(|sz| socket.flush().map(|_| sz))
             }
             LoggerBackend::Udp(ref socket, ref addr) => socket.send_to(message, addr),
-            LoggerBackend::Tcp(ref mut socket) => socket.write(message),
+            LoggerBackend::Tcp(ref mut socket) => socket
+                .write(message)
+                .and_then(|sz| socket.flush().map(|_| sz)),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
@@ -200,12 +203,15 @@ impl Write for LoggerBackend {
                 socket
                     .write_fmt(args)
                     .and_then(|_| socket.write(&null).map(|_| ()))
+                    .and_then(|sz| socket.flush().map(|_| sz))
             }
             LoggerBackend::Udp(ref socket, ref addr) => {
                 let message = fmt::format(args);
                 socket.send_to(message.as_bytes(), addr).map(|_| ())
             }
-            LoggerBackend::Tcp(ref mut socket) => socket.write_fmt(args),
+            LoggerBackend::Tcp(ref mut socket) => socket
+                .write_fmt(args)
+                .and_then(|sz| socket.flush().map(|_| sz)),
             #[cfg(not(unix))]
             LoggerBackend::Unix(_) | LoggerBackend::UnixStream(_) => {
                 Err(io::Error::new(io::ErrorKind::Other, "unsupported platform"))
