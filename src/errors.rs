@@ -32,3 +32,9 @@ impl From<std::io::Error> for Error {
         Error::Io(err)
     }
 }
+
+#[test]
+fn error_is_send_sync() {
+    fn is_send_sync<T: Send + Sync>() {}
+    is_send_sync::<Error>();
+}
