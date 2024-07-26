@@ -28,8 +28,7 @@ fn test_unix_socket() {
     std::thread::spawn(move || {
         let mut stream = listener.accept().unwrap().0;
         b.wait();
-        loop {
-            let mut str = s.lock().unwrap();
+        while let Ok(mut str) = s.lock() {
             stream.read_to_string(&mut str).unwrap();
         }
     });
