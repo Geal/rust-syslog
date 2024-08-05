@@ -261,7 +261,7 @@ pub fn unix<F: Clone>(formatter: F) -> Result<Logger<LoggerBackend, F>> {
 
 #[cfg(not(unix))]
 pub fn unix<F: Clone>(_formatter: F) -> Result<Logger<LoggerBackend, F>> {
-    Err(ErrorKind::UnsupportedPlatform)?
+    Err(io::ErrorKind::UnsupportedPlatform)?
 }
 
 /// Returns a Logger using unix socket to target local syslog at user provided path
@@ -272,7 +272,7 @@ pub fn unix_custom<P: AsRef<Path>, F>(formatter: F, path: P) -> Result<Logger<Lo
 
 #[cfg(not(unix))]
 pub fn unix_custom<P: AsRef<Path>, F>(_formatter: F, _path: P) -> Result<Logger<LoggerBackend, F>> {
-    Err(ErrorKind::UnsupportedPlatform)?
+    Err(io::ErrorKind::UnsupportedPlatform)?
 }
 
 #[cfg(unix)]
@@ -387,7 +387,7 @@ pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> 
 
 #[cfg(not(unix))]
 pub fn init_unix(_facility: Facility, _log_level: log::LevelFilter) -> Result<()> {
-    Err(ErrorKind::UnsupportedPlatform)?
+    Err(io::ErrorKind::UnsupportedPlatform)?
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
@@ -419,7 +419,7 @@ pub fn init_unix_custom<P: AsRef<Path>>(
     _log_level: log::LevelFilter,
     _path: P,
 ) -> Result<()> {
-    Err(ErrorKind::UnsupportedPlatform)?
+    Err(io::ErrorKind::UnsupportedPlatform)?
 }
 
 /// UDP Logger init function compatible with log crate
