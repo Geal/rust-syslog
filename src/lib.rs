@@ -54,6 +54,7 @@
 extern crate log;
 extern crate time;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
@@ -357,6 +358,44 @@ impl Log for BasicLogger {
                 Level::Info => logger.info(message),
                 Level::Debug => logger.debug(message),
                 Level::Trace => logger.debug(message),
+            };
+        }
+    }
+
+    fn flush(&self) {
+        let _ = self.logger.lock().unwrap().backend.flush();
+    }
+}
+
+pub struct Logger5424 {
+    logger: Arc<Mutex<Logger<LoggerBackend, Formatter5424>>>,
+}
+
+impl Logger5424 {
+    pub fn new(logger: Logger<LoggerBackend, Formatter5424>) -> Logger5424 {
+        Logger5424 {
+            logger: Arc::new(Mutex::new(logger)),
+        }
+    }
+}
+
+impl Log for Logger5424 {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= log::max_level() && metadata.level() <= log::STATIC_MAX_LEVEL
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(record.metadata()) {
+            //FIXME: temporary patch to compile
+            let msg = format!("{}", record.args());
+            let btree: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+            let mut logger = self.logger.lock().unwrap();
+            let _ = match record.level() {
+                Level::Error => logger.err((1, btree.clone(), msg)),
+                Level::Warn => logger.warning((1, btree.clone(), msg)),
+                Level::Info => logger.info((1, btree.clone(), msg)),
+                Level::Debug => logger.debug((1, btree.clone(), msg)),
+                Level::Trace => logger.debug((1, btree, msg)),
             };
         }
     }
