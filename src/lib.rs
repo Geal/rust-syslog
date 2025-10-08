@@ -395,7 +395,7 @@ impl Log for Logger5424 {
                 Level::Warn => logger.warning((1, btree.clone(), msg)),
                 Level::Info => logger.info((1, btree.clone(), msg)),
                 Level::Debug => logger.debug((1, btree.clone(), msg)),
-                Level::Trace => logger.debug((1, btree.clone(), msg)),
+                Level::Trace => logger.debug((1, btree, msg)),
             };
         }
     }
