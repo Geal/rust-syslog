@@ -54,6 +54,7 @@
 extern crate log;
 extern crate time;
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};
@@ -63,7 +64,6 @@ use std::os::unix::net::{UnixDatagram, UnixStream};
 use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
-use std::collections::BTreeMap;
 
 use log::{Level, Log, Metadata, Record};
 
