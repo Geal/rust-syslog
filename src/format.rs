@@ -3,11 +3,9 @@ use std::fmt::Display;
 use std::io::Write;
 use time;
 
-use errors::*;
-use facility::Facility;
-use get_hostname;
-use get_process_info;
-use Priority;
+use crate::errors::*;
+use crate::{Facility, Priority, get_hostname, get_process_info};
+use libc::*;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]

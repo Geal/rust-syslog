@@ -51,10 +51,6 @@
 //!
 //! info!("hello world");
 //! ```
-#[cfg(feature = "log")]
-extern crate log;
-extern crate time;
-
 use std::env;
 use std::fmt::{self, Arguments};
 use std::io::{self, BufWriter, Write};

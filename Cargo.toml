@@ -7,6 +7,7 @@ license = "MIT"
 repository = "https://github.com/Geal/rust-syslog"
 documentation = "https://docs.rs/syslog"
 keywords = ["syslog", "logs", "logging"]
+edition = "2024"
 
 [dependencies]
 hostname    = "0.4"
