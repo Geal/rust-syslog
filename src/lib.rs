@@ -51,6 +51,7 @@
 //!
 //! info!("hello world");
 //! ```
+#[cfg(feature = "log")]
 extern crate log;
 extern crate time;
 
@@ -64,6 +65,7 @@ use std::path::Path;
 use std::process;
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "log")]
 use log::{Level, Log, Metadata, Record};
 
 mod errors;
@@ -340,6 +342,7 @@ impl BasicLogger {
     }
 }
 
+#[cfg(feature = "log")]
 #[allow(unused_variables, unused_must_use)]
 impl Log for BasicLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
@@ -367,6 +370,7 @@ impl Log for BasicLogger {
 }
 
 /// Unix socket Logger init function compatible with log crate
+#[cfg(feature = "log")]
 #[cfg(unix)]
 pub fn init_unix(facility: Facility, log_level: log::LevelFilter) -> Result<()> {
     let (process, pid) = get_process_info()?;
@@ -391,6 +395,7 @@ pub fn init_unix(_facility: Facility, _log_level: log::LevelFilter) -> Result<()
 }
 
 /// Unix socket Logger init function compatible with log crate and user provided socket path
+#[cfg(feature = "log")]
 #[cfg(unix)]
 pub fn init_unix_custom<P: AsRef<Path>>(
     facility: Facility,
@@ -423,6 +428,7 @@ pub fn init_unix_custom<P: AsRef<Path>>(
 }
 
 /// UDP Logger init function compatible with log crate
+#[cfg(feature = "log")]
 pub fn init_udp<T: ToSocketAddrs>(
     local: T,
     server: T,
@@ -447,6 +453,7 @@ pub fn init_udp<T: ToSocketAddrs>(
 }
 
 /// TCP Logger init function compatible with log crate
+#[cfg(feature = "log")]
 pub fn init_tcp<T: ToSocketAddrs>(
     server: T,
     hostname: String,
@@ -482,6 +489,7 @@ pub fn init_tcp<T: ToSocketAddrs>(
 /// this method doesn't return error even if there is no syslog.
 ///
 /// If `application_name` is `None` name is derived from executable name
+#[cfg(feature = "log")]
 pub fn init(
     facility: Facility,
     log_level: log::LevelFilter,
