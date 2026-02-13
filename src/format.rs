@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::io::Write;
-use time;
 
 use crate::errors::*;
 use crate::{Facility, Priority, get_hostname, get_process_info};
-use libc::*;
 
 #[allow(non_camel_case_types)]
 #[derive(Copy, Clone)]

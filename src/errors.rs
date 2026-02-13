@@ -20,9 +20,9 @@ impl std::error::Error for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            Error::Initialization(ref err) => write!(f, "Initialization error: {}", err),
-            Error::Write(ref err) => write!(f, "Write error: {}", err),
-            Error::Io(ref err) => write!(f, "Io error: {}", err),
+            Error::Initialization(ref err) => write!(f, "Initialization error: {err}"),
+            Error::Write(ref err) => write!(f, "Write error: {err}"),
+            Error::Io(ref err) => write!(f, "Io error: {err}"),
         }
     }
 }
