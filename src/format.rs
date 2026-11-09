@@ -69,7 +69,7 @@ pub struct Formatter3164 {
 impl<T: Display> LogFormat<T> for Formatter3164 {
     fn format<W: Write>(&self, w: &mut W, severity: Severity, message: T) -> Result<()> {
         let format =
-            time::format_description::parse("[month repr:short] [day] [hour]:[minute]:[second]")
+            time::format_description::parse_borrowed::<1>("[month repr:short] [day] [hour]:[minute]:[second]")
                 .unwrap();
 
         if let Some(ref hostname) = self.hostname {
@@ -241,14 +241,6 @@ fn encode_priority(severity: Severity, facility: Facility) -> Priority {
     facility as u8 | severity as u8
 }
 
-#[cfg(unix)]
-// On unix platforms, time::OffsetDateTime::now_local always returns an error so use UTC instead
-// https://github.com/time-rs/time/issues/380
-fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
-    Ok(time::OffsetDateTime::now_utc())
-}
-
-#[cfg(not(unix))]
 fn now_local() -> std::result::Result<time::OffsetDateTime, time::error::IndeterminateOffset> {
     time::OffsetDateTime::now_local()
 }
